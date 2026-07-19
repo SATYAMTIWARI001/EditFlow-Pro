@@ -1,0 +1,6 @@
+{
+  "name": "EditFlow Pro",
+  "description": "Adobe Acrobat Pro & Microsoft Word-like PDF editor with direct text, layout, image, shape, and vector customization powered by client-side and server-side OCR and AI engines.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
