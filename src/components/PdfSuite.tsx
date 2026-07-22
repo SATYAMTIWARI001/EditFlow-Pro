@@ -94,7 +94,7 @@ export default function PdfSuite() {
   // --- PDF MERGE IMPLEMENTATION (REAL ALGORITHM) ---
   const executeMerge = async () => {
     if (mergeFiles.length < 2) {
-      alert("Please upload at least 2 PDF files to merge.");
+      setMergeStatus("Please upload at least 2 PDF files to merge.");
       return;
     }
     setMerging(true);
@@ -120,7 +120,7 @@ export default function PdfSuite() {
       setMergeStatus("Successfully merged & downloaded!");
     } catch (err: any) {
       console.error(err);
-      alert("Error merging PDFs: " + err.message);
+      setMergeStatus("Error merging PDFs: " + err.message);
     } finally {
       setMerging(false);
     }
@@ -158,7 +158,7 @@ export default function PdfSuite() {
       }
 
       if (indicesToExtract.length === 0) {
-        alert(`Invalid page range or page index out of range (Total pages: ${totalPages})`);
+        setSplitStatus(`Invalid page range or page index out of range (Total pages: ${totalPages})`);
         setSplitting(false);
         return;
       }
@@ -179,7 +179,7 @@ export default function PdfSuite() {
       setSplitStatus("Split successfully! Check your downloads.");
     } catch (err: any) {
       console.error(err);
-      alert("Split failed: " + err.message);
+      setSplitStatus("Split failed: " + err.message);
     } finally {
       setSplitting(false);
     }
@@ -212,7 +212,7 @@ export default function PdfSuite() {
       setRotateStatus("Rotated and compiled successfully!");
     } catch (err: any) {
       console.error(err);
-      alert("Rotation failed: " + err.message);
+      setRotateStatus("Rotation failed: " + err.message);
     } finally {
       setRotating(false);
     }
@@ -252,7 +252,7 @@ export default function PdfSuite() {
   const handleAiSummarize = async () => {
     const textToSummarize = docTextForAi || ocrResult;
     if (!textToSummarize.trim()) {
-      alert("Please provide some document text or run OCR first to extract text!");
+      setAiSummary("Please provide some document text or run OCR first to extract text!");
       return;
     }
 
@@ -287,7 +287,7 @@ export default function PdfSuite() {
   const triggerRealSummarize = async () => {
     const finalTxt = docTextForAi.trim() || ocrResult.trim();
     if (!finalTxt) {
-      alert("Please write, paste or OCR-extract some document text first.");
+      setAiSummary("Please write, paste or OCR-extract some document text first.");
       return;
     }
     setSummarizing(true);
@@ -668,7 +668,6 @@ export default function PdfSuite() {
                     <button 
                       onClick={() => {
                         navigator.clipboard.writeText(ocrResult);
-                        alert("Text copied to clipboard!");
                       }} 
                       className="text-[10px] text-emerald-600 hover:underline font-bold"
                     >

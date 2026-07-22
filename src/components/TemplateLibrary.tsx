@@ -45,12 +45,12 @@ export default function TemplateLibrary({
 
   const handleQuickDownload = async (format: "png" | "pdf") => {
     if (!quickName.trim()) {
-      alert("Please enter a participant name to generate your certificate!");
+      setQuickStatus("Please enter a participant name to generate your certificate.");
       return;
     }
     const selectedTpl = templates.find((t) => t.id === quickTemplateId);
     if (!selectedTpl) {
-      alert("Please select a certificate template model first.");
+      setQuickStatus("Please select a certificate template model first.");
       return;
     }
 
@@ -217,7 +217,7 @@ export default function TemplateLibrary({
       setTimeout(() => setQuickStatus(""), 4000);
     } catch (e: any) {
       console.error(e);
-      alert("Failed to compile certificate. Please try again.");
+      setQuickStatus("Failed to compile certificate. Please try again.");
     } finally {
       setQuickGenerating(false);
     }
@@ -232,7 +232,7 @@ export default function TemplateLibrary({
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       if (file.size > 20 * 1024 * 1024) {
-        alert("File is too large! Maximum size allowed is 20MB.");
+        setQuickStatus("File is too large! Maximum size allowed is 20MB.");
         return;
       }
       onUploadTemplate(file);

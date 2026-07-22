@@ -292,9 +292,9 @@ export default function App() {
             return t;
           })
         );
-        alert("Template layout configuration imported successfully into the active certificate workspace!");
+        console.log("Template layout configuration imported successfully into the active certificate workspace!");
       } catch (err) {
-        alert("Invalid template layout configuration JSON file.");
+        console.error("Invalid template layout configuration JSON file.");
       }
     };
     reader.readAsText(file);
@@ -878,7 +878,6 @@ export default function App() {
                   } else {
                     setActiveTab("library");
                   }
-                  alert("Opening Designer Workspace download controls!");
                 }}
                 className="p-4 rounded-2xl border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-all flex flex-col items-start gap-2 text-left cursor-pointer group"
               >

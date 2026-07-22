@@ -338,7 +338,7 @@ export default function Workspace({
       setTimeout(() => setDownloadStatus(""), 4000);
     } catch (err: any) {
       console.error(err);
-      alert("Failed to render high-res image canvas. Please check external asset URLs.");
+      setDownloadStatus("Failed to render high-res image canvas. Please check external asset URLs.");
     } finally {
       setDownloading(false);
     }

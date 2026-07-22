@@ -245,7 +245,7 @@ export default function BatchGenerator({
       });
     } catch (e) {
       console.error(e);
-      alert("Failed to export. Please try again.");
+      setExportProgress("Failed to export. Please try again.");
     } finally {
       setExporting(false);
     }
@@ -295,7 +295,7 @@ export default function BatchGenerator({
       });
     } catch (e) {
       console.error(e);
-      alert("Failed to compile PDF.");
+      setExportProgress("Failed to compile PDF.");
     } finally {
       setExporting(false);
     }
@@ -406,7 +406,7 @@ export default function BatchGenerator({
       link.click();
     } catch (e) {
       console.error(e);
-      alert("An error occurred during batch generation.");
+      setExportProgress("An error occurred during batch generation.");
     } finally {
       setExporting(false);
       setBatchProgress(0);

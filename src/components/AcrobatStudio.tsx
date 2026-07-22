@@ -930,13 +930,13 @@ export default function AcrobatStudio() {
       }
       return el;
     }));
-    alert(`Find & Replace Complete: Substituted ${replacedCount} occurrences!`);
+    setAiOutput(`Find & Replace Complete: Substituted ${replacedCount} occurrences!`);
   };
 
   // AI Spellcheck & Grammar Check with local simulated feedback on UI
   const triggerAiDocCheck = async (action: "spell" | "grammar" | "expand") => {
     if (!selectedId) {
-      alert("Please select a text element first to run AI proofing!");
+      setAiOutput("Please select a text element first to run AI proofing!");
       return;
     }
     const item = elements.find(el => el.id === selectedId);
@@ -989,7 +989,7 @@ export default function AcrobatStudio() {
 
   const deletePage = (pageId: number) => {
     if (pages.length <= 1) {
-      alert("At least one page is required inside the document editor.");
+      setAiOutput("At least one page is required inside the document editor.");
       return;
     }
     saveStateToHistory();
@@ -1046,7 +1046,8 @@ export default function AcrobatStudio() {
             const yPos = height - ((el.y / 100) * height);
             
             if (el.type === "text" || el.type === "sticky_note" || el.type === "comment" || el.type === "highlight") {
-              page.drawText(el.content || "", {
+              const safeText = (el.content || "").replace(/[^\x20-\x7E]/g, " ");
+              page.drawText(safeText, {
                 x: Math.max(10, xPos),
                 y: Math.max(20, yPos - (el.style?.fontSize || 12)),
                 size: el.style?.fontSize || 12,
@@ -1907,7 +1908,6 @@ export default function AcrobatStudio() {
                   </div>
                   <button
                     onClick={() => {
-                      alert("Restoring snapshot backup successfully!");
                       setShowHistoryModal(false);
                     }}
                     className="px-2 py-1 bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-400 rounded-lg text-[10px] font-black hover:bg-red-200 transition-colors"
