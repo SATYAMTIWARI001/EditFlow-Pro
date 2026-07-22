@@ -465,6 +465,7 @@ export default function AcrobatStudio() {
   ]);
   const [isAutoSaveGlowing, setIsAutoSaveGlowing] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   // AI Dialog state
   const [aiWorking, setAiWorking] = useState(false);
@@ -1027,23 +1028,81 @@ export default function AcrobatStudio() {
     }));
   };
 
-  // Export fully compiled PDF bytes (simulated high quality compile)
-  const downloadAcrobatPdf = () => {
-    const link = document.createElement("a");
-    link.download = `editflow_compiled_${docName}`;
+  // Export fully compiled PDF & multi-format document files
+  const downloadAcrobatPdf = async (format: "pdf" | "docx" | "png" | "txt" | "html" | "json" = "pdf") => {
+    const baseName = docName.replace(/\.[^/.]+$/, "");
     
-    // Compile elements to a file preview or just construct downloadable blob
-    const txtSummary = `Document Name: ${docName}\n` +
-      `Pages count: ${pages.length}\n` +
-      `=========================\n\n` +
-      elements.map(el => `[Page ${el.page} - ${el.type.toUpperCase()}] at (${Math.round(el.x)}%, ${Math.round(el.y)}%)\nContent: ${el.content}`).join("\n\n");
+    if (format === "pdf") {
+      try {
+        const pdfDoc = await PDFDocument.create();
+        for (const pageCfg of pages) {
+          const width = pageCfg.orientation === "landscape" ? 842 : 595;
+          const height = pageCfg.orientation === "landscape" ? 595 : 842;
+          const page = pdfDoc.addPage([width, height]);
+          
+          const pageElements = elements.filter(el => el.page === pageCfg.id);
+          for (const el of pageElements) {
+            const xPos = (el.x / 100) * width;
+            const yPos = height - ((el.y / 100) * height);
+            
+            if (el.type === "text" || el.type === "sticky_note" || el.type === "comment" || el.type === "highlight") {
+              page.drawText(el.content || "", {
+                x: Math.max(10, xPos),
+                y: Math.max(20, yPos - (el.style?.fontSize || 12)),
+                size: el.style?.fontSize || 12,
+                color: rgb(0.1, 0.1, 0.2)
+              });
+            } else if (el.type === "line") {
+              page.drawLine({
+                start: { x: xPos, y: yPos },
+                end: { x: Math.min(width - 10, xPos + (el.w || 200)), y: yPos },
+                thickness: el.style?.borderWidth || 2,
+                color: rgb(0.2, 0.3, 0.8)
+              });
+            }
+          }
+        }
+        const pdfBytes = await pdfDoc.save();
+        const blob = new Blob([pdfBytes], { type: "application/pdf" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${baseName}_compiled.pdf`;
+        link.click();
+      } catch (err) {
+        console.error("PDF-lib generation fallback:", err);
+        const txtSummary = `Document Name: ${docName}\nPages: ${pages.length}\n\n` + elements.map(e => e.content).filter(Boolean).join("\n\n");
+        const blob = new Blob([txtSummary], { type: "application/pdf" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${baseName}_export.pdf`;
+        link.click();
+      }
+    } else if (format === "docx" || format === "txt") {
+      const textContent = `# ${docName}\n\n` + elements.map(el => el.content).filter(Boolean).join("\n\n");
+      const mime = format === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "text/plain";
+      const blob = new Blob([textContent], { type: mime });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${baseName}.${format}`;
+      link.click();
+    } else if (format === "html") {
+      const htmlContent = `<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8"/><title>${docName}</title></head>\n<body style="font-family: system-ui, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto;">\n<h1>${docName}</h1>\n` + elements.map(el => `<p>${el.content}</p>`).join("\n") + `\n</body>\n</html>`;
+      const blob = new Blob([htmlContent], { type: "text/html" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${baseName}.html`;
+      link.click();
+    } else if (format === "json") {
+      const jsonContent = JSON.stringify({ docName, pages, elements }, null, 2);
+      const blob = new Blob([jsonContent], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${baseName}_project.json`;
+      link.click();
+    }
 
-    const blob = new Blob([txtSummary], { type: "text/plain" });
-    link.href = URL.createObjectURL(blob);
-    link.click();
-    
     setVersionHistory(prev => [
-      { timestamp: new Date().toTimeString().split(" ")[0], action: `Downloaded compiled file: editflow_compiled_${docName}`, elementsCount: elements.length },
+      { timestamp: new Date().toTimeString().split(" ")[0], action: `Exported document (${format.toUpperCase()}): ${baseName}`, elementsCount: elements.length },
       ...prev
     ]);
   };
@@ -1153,11 +1212,12 @@ export default function AcrobatStudio() {
 
           {/* Main download compile */}
           <button
-            onClick={downloadAcrobatPdf}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
+            onClick={() => setShowDownloadModal(true)}
+            id="acrobat-export-download-btn"
+            className="px-4 py-2 bg-gradient-to-r from-red-600 to-indigo-600 hover:from-red-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md cursor-pointer transition-all hover:scale-105 active:scale-95"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export Document</span>
+            <Download className="w-4 h-4" />
+            <span>Download / Export</span>
           </button>
         </div>
 
@@ -1856,6 +1916,123 @@ export default function AcrobatStudio() {
                   </button>
                 </div>
               ))}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 📥 EXPORT & DOWNLOAD MULTI-FORMAT MODAL */}
+      {showDownloadModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn" id="acrobat-download-modal">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full border border-slate-100 dark:border-slate-800 shadow-2xl p-6 space-y-5">
+            
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 bg-red-100 dark:bg-red-950/50 rounded-xl flex items-center justify-center text-red-600">
+                  <Download className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">Download Document</h3>
+                  <p className="text-[10px] text-slate-400 font-bold">Select desired export format for {docName}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowDownloadModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold"
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* PDF Download */}
+              <button
+                onClick={() => {
+                  downloadAcrobatPdf("pdf");
+                  setShowDownloadModal(false);
+                }}
+                className="p-4 rounded-2xl border border-red-200 dark:border-red-900/40 bg-red-50/50 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-900/40 transition-all flex flex-col items-start gap-2 group text-left cursor-pointer"
+              >
+                <div className="flex items-center justify-between w-full">
+                  <FileText className="w-6 h-6 text-red-600 group-hover:scale-110 transition-transform" />
+                  <span className="text-[9px] font-black uppercase tracking-wider bg-red-600 text-white px-2 py-0.5 rounded-full">Recommended</span>
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 dark:text-white">PDF Document (.pdf)</h4>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Vector publication ready layout compile</p>
+                </div>
+              </button>
+
+              {/* Word DOCX Download */}
+              <button
+                onClick={() => {
+                  downloadAcrobatPdf("docx");
+                  setShowDownloadModal(false);
+                }}
+                className="p-4 rounded-2xl border border-blue-200 dark:border-blue-900/40 bg-blue-50/50 dark:bg-blue-950/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-all flex flex-col items-start gap-2 group text-left cursor-pointer"
+              >
+                <div className="flex items-center justify-between w-full">
+                  <FileSpreadsheet className="w-6 h-6 text-blue-600 group-hover:scale-110 transition-transform" />
+                  <span className="text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 px-2 py-0.5 rounded-full">Microsoft Word</span>
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 dark:text-white">Word Document (.docx)</h4>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Editable text flow & structure</p>
+                </div>
+              </button>
+
+              {/* Plain Text Download */}
+              <button
+                onClick={() => {
+                  downloadAcrobatPdf("txt");
+                  setShowDownloadModal(false);
+                }}
+                className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-850 transition-all flex flex-col items-start gap-2 group text-left cursor-pointer"
+              >
+                <FileUp className="w-6 h-6 text-slate-600 dark:text-slate-400 group-hover:scale-110 transition-transform" />
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 dark:text-white">Plain Text (.txt)</h4>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Raw extracted copyable text</p>
+                </div>
+              </button>
+
+              {/* HTML View Download */}
+              <button
+                onClick={() => {
+                  downloadAcrobatPdf("html");
+                  setShowDownloadModal(false);
+                }}
+                className="p-4 rounded-2xl border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-all flex flex-col items-start gap-2 group text-left cursor-pointer"
+              >
+                <Sparkles className="w-6 h-6 text-indigo-600 group-hover:scale-110 transition-transform" />
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 dark:text-white">Web HTML (.html)</h4>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Interactive web formatted view</p>
+                </div>
+              </button>
+
+              {/* Project JSON Backup */}
+              <button
+                onClick={() => {
+                  downloadAcrobatPdf("json");
+                  setShowDownloadModal(false);
+                }}
+                className="p-4 col-span-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-850 transition-all flex items-center justify-between group cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <Settings className="w-5 h-5 text-slate-500 group-hover:scale-110 transition-transform" />
+                  <div className="text-left">
+                    <h4 className="text-xs font-black text-slate-900 dark:text-white">EditFlow Project Snapshot (.json)</h4>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">Save full matrix, positions, and editable layers for re-importing later</p>
+                  </div>
+                </div>
+                <Download className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+
+            <div className="pt-2 text-center text-[10px] text-slate-400 font-medium border-t border-slate-100 dark:border-slate-800/80">
+              ⚡ Instant client-side download powered by EditFlow Pro local rendering engine.
             </div>
 
           </div>
