@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { CertificateTemplate, CertificateField, ParticipantRecord } from "../types";
 import { getSmartTextScale, formatFieldValue } from "../lib/canvasUtils";
-import { Maximize2, QrCode, PenTool, Plus, Download, RefreshCw, FileDown, Award, Zap, Sparkles } from "lucide-react";
+import { Maximize2, QrCode, PenTool, Plus, Download, RefreshCw, FileDown, Award, Zap, Sparkles, Undo2, Redo2 } from "lucide-react";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 
@@ -22,6 +22,11 @@ interface WorkspaceProps {
   qrCodeUrlDataUrl: string;
   onAddField?: (name: string, x?: number, y?: number) => void;
   onAddHistory?: (record: ParticipantRecord) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  historyStep?: { current: number; total: number };
 }
 
 export default function Workspace({
@@ -40,6 +45,11 @@ export default function Workspace({
   qrCodeUrlDataUrl,
   onAddField,
   onAddHistory,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  historyStep,
 }: WorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -347,17 +357,46 @@ export default function Workspace({
   return (
     <div className="flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-950 p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 min-h-[500px] shadow-inner select-none transition-colors" id="editor-workspace">
       
-      {/* Top bar instructions and "Click-to-Add-Text" button */}
+      {/* Top bar instructions, Undo/Redo controls, and "Click-to-Add-Text" button */}
       <div className="w-full max-w-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400 mb-4 px-2">
         <span className="flex items-center gap-1.5 font-medium">
           <Maximize2 className="w-3.5 h-3.5 text-blue-500" />
-          <span>Click any placeholder to edit. Drag elements to place.</span>
+          <span>Click placeholder to edit. Drag to position.</span>
         </span>
         
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Undo / Redo Toolbar */}
+          <div className="flex items-center bg-white dark:bg-slate-900 p-0.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <button
+              onClick={onUndo}
+              disabled={!canUndo}
+              id="workspace-undo-btn"
+              className="px-2.5 py-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer disabled:cursor-not-allowed"
+              title="Undo (Ctrl+Z)"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+              <span>Undo</span>
+            </button>
+            <button
+              onClick={onRedo}
+              disabled={!canRedo}
+              id="workspace-redo-btn"
+              className="px-2.5 py-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer disabled:cursor-not-allowed"
+              title="Redo (Ctrl+Y)"
+            >
+              <Redo2 className="w-3.5 h-3.5" />
+              <span>Redo</span>
+            </button>
+            {historyStep && historyStep.total > 1 && (
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono px-2 py-0.5 border-l border-slate-200 dark:border-slate-800" title="History Stack Index">
+                {historyStep.current}/{historyStep.total}
+              </span>
+            )}
+          </div>
+
           {isAddTextMode && (
             <div className="flex items-center gap-1.5 bg-yellow-50 dark:bg-yellow-950/30 text-yellow-600 dark:text-yellow-400 px-2 py-1 rounded-lg border border-yellow-100 dark:border-yellow-900/30 text-[11px] font-bold animate-pulse">
-              <span>Text Placeholder Name:</span>
+              <span>Placeholder:</span>
               <input 
                 type="text" 
                 value={customFieldName} 
@@ -377,7 +416,7 @@ export default function Workspace({
             }`}
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>{isAddTextMode ? "Placing Mode (Click Canvas)" : "Place Text Anywhere ➕"}</span>
+            <span>{isAddTextMode ? "Placing Mode" : "Place Text ➕"}</span>
           </button>
         </div>
       </div>

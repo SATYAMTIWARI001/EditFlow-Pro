@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { CertificateTemplate, CertificateField, FieldStyle, ParticipantRecord } from "./types";
 import { generateDefaultTemplates } from "./lib/templateGenerator";
 import { generateQRCodeDataUrl } from "./lib/canvasUtils";
@@ -28,7 +28,12 @@ import {
   Image as ImageIcon,
   FileSpreadsheet,
   DownloadCloud,
-  Check
+  Check,
+  Undo2,
+  Redo2,
+  RotateCcw,
+  RotateCw,
+  History
 } from "lucide-react";
 
 export default function App() {
@@ -40,6 +45,117 @@ export default function App() {
   const [templates, setTemplates] = useState<CertificateTemplate[]>([]);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
+
+  // Undo / Redo state management history stack
+  const [historyStack, setHistoryStack] = useState<CertificateTemplate[][]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+
+  const historyIndexRef = useRef<number>(historyIndex);
+  historyIndexRef.current = historyIndex;
+
+  const historyStackRef = useRef<CertificateTemplate[][]>(historyStack);
+  historyStackRef.current = historyStack;
+
+  const debouncedTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Deep clone templates for immutable history snapshots
+  const cloneTemplates = (tpls: CertificateTemplate[]): CertificateTemplate[] => {
+    return tpls.map((t) => ({
+      ...t,
+      fields: t.fields.map((f) => ({
+        ...f,
+        style: { ...f.style },
+      })),
+      qrCode: { ...t.qrCode },
+      signature: { ...t.signature },
+      watermark: { ...t.watermark },
+    }));
+  };
+
+  // Push layout or style change onto history stack
+  const recordHistory = useCallback((newTemplates: CertificateTemplate[], debounceMs: number = 0) => {
+    const snapshot = cloneTemplates(newTemplates);
+    setTemplates(snapshot);
+
+    if (debounceMs > 0) {
+      if (debouncedTimerRef.current) clearTimeout(debouncedTimerRef.current);
+      debouncedTimerRef.current = setTimeout(() => {
+        setHistoryStack((prevStack) => {
+          const sliced = prevStack.slice(0, historyIndexRef.current + 1);
+          const updated = [...sliced, snapshot].slice(-50);
+          setHistoryIndex(updated.length - 1);
+          return updated;
+        });
+      }, debounceMs);
+    } else {
+      if (debouncedTimerRef.current) clearTimeout(debouncedTimerRef.current);
+      setHistoryStack((prevStack) => {
+        const sliced = prevStack.slice(0, historyIndexRef.current + 1);
+        const updated = [...sliced, snapshot].slice(-50);
+        setHistoryIndex(updated.length - 1);
+        return updated;
+      });
+    }
+  }, []);
+
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex < historyStack.length - 1;
+
+  const handleUndo = useCallback(() => {
+    const idx = historyIndexRef.current;
+    const stack = historyStackRef.current;
+    if (idx > 0) {
+      const prevIdx = idx - 1;
+      const prevTemplates = cloneTemplates(stack[prevIdx]);
+      setTemplates(prevTemplates);
+      setHistoryIndex(prevIdx);
+    }
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    const idx = historyIndexRef.current;
+    const stack = historyStackRef.current;
+    if (idx < stack.length - 1) {
+      const nextIdx = idx + 1;
+      const nextTemplates = cloneTemplates(stack[nextIdx]);
+      setTemplates(nextTemplates);
+      setHistoryIndex(nextIdx);
+    }
+  }, []);
+
+  // Keyboard shortcut listener for Ctrl+Z / Cmd+Z (Undo) and Ctrl+Y / Cmd+Shift+Z (Redo)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const isMac = typeof window !== "undefined" && window.navigator?.platform ? window.navigator.platform.toUpperCase().indexOf("MAC") >= 0 : false;
+      const modifier = isMac ? e.metaKey : e.ctrlKey;
+
+      if (modifier && e.key.toLowerCase() === "z") {
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          e.preventDefault();
+          handleUndo();
+        }
+      } else if (modifier && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleUndo, handleRedo]);
 
   // Live preview data (dynamic field test values)
   const [previewName, setPreviewName] = useState<string>("SATYAM TIWARI");
@@ -87,7 +203,10 @@ export default function App() {
   // Load default templates on boot
   useEffect(() => {
     const defaultTemplates = generateDefaultTemplates();
-    setTemplates(defaultTemplates);
+    const cloned = cloneTemplates(defaultTemplates);
+    setTemplates(cloned);
+    setHistoryStack([cloned]);
+    setHistoryIndex(0);
     if (defaultTemplates.length > 0) {
       setActiveTemplateId(defaultTemplates[0].id);
     }
@@ -218,7 +337,7 @@ export default function App() {
         },
       };
 
-      setTemplates((prev) => [newTemplate, ...prev]);
+      recordHistory([newTemplate, ...templates]);
       setActiveTemplateId(newId);
       setActiveFieldId(null);
       setActiveTab("editor");
@@ -227,9 +346,10 @@ export default function App() {
   };
 
   const handleDeleteTemplate = (id: string) => {
-    setTemplates((prev) => prev.filter((t) => t.id !== id));
+    const updated = templates.filter((t) => t.id !== id);
+    recordHistory(updated);
     if (activeTemplateId === id) {
-      setActiveTemplateId(templates[1]?.id || null);
+      setActiveTemplateId(updated[0]?.id || null);
     }
   };
 
@@ -250,7 +370,7 @@ export default function App() {
       signature: { ...target.signature },
       watermark: { ...target.watermark },
     };
-    setTemplates((prev) => [duplicated, ...prev]);
+    recordHistory([duplicated, ...templates]);
     setActiveTemplateId(duplicated.id);
   };
 
@@ -278,20 +398,19 @@ export default function App() {
         const config = JSON.parse(e.target?.result as string);
         if (!activeTemplateId) return;
         
-        setTemplates((prev) =>
-          prev.map((t) => {
-            if (t.id === activeTemplateId) {
-              return {
-                ...t,
-                fields: config.fields || t.fields,
-                qrCode: config.qrCode || t.qrCode,
-                signature: config.signature || t.signature,
-                watermark: config.watermark || t.watermark,
-              };
-            }
-            return t;
-          })
-        );
+        const updated = templates.map((t) => {
+          if (t.id === activeTemplateId) {
+            return {
+              ...t,
+              fields: config.fields || t.fields,
+              qrCode: config.qrCode || t.qrCode,
+              signature: config.signature || t.signature,
+              watermark: config.watermark || t.watermark,
+            };
+          }
+          return t;
+        });
+        recordHistory(updated);
         console.log("Template layout configuration imported successfully into the active certificate workspace!");
       } catch (err) {
         console.error("Invalid template layout configuration JSON file.");
@@ -307,41 +426,39 @@ export default function App() {
   };
 
   const handleUpdateFieldStyle = (fieldId: string, styleOverrides: Partial<FieldStyle>) => {
-    setTemplates((prev) =>
-      prev.map((t) => {
-        if (t.id === activeTemplateId) {
-          return {
-            ...t,
-            fields: t.fields.map((f) => {
-              if (f.id === fieldId) {
-                return { ...f, style: { ...f.style, ...styleOverrides } };
-              }
-              return f;
-            }),
-          };
-        }
-        return t;
-      })
-    );
+    const updated = templates.map((t) => {
+      if (t.id === activeTemplateId) {
+        return {
+          ...t,
+          fields: t.fields.map((f) => {
+            if (f.id === fieldId) {
+              return { ...f, style: { ...f.style, ...styleOverrides } };
+            }
+            return f;
+          }),
+        };
+      }
+      return t;
+    });
+    recordHistory(updated, 150);
   };
 
   const handleUpdateFieldPosition = (fieldId: string, x: number, y: number) => {
-    setTemplates((prev) =>
-      prev.map((t) => {
-        if (t.id === activeTemplateId) {
-          return {
-            ...t,
-            fields: t.fields.map((f) => {
-              if (f.id === fieldId) {
-                return { ...f, x, y };
-              }
-              return f;
-            }),
-          };
-        }
-        return t;
-      })
-    );
+    const updated = templates.map((t) => {
+      if (t.id === activeTemplateId) {
+        return {
+          ...t,
+          fields: t.fields.map((f) => {
+            if (f.id === fieldId) {
+              return { ...f, x, y };
+            }
+            return f;
+          }),
+        };
+      }
+      return t;
+    });
+    recordHistory(updated, 250);
   };
 
   const handleAddField = (placeholderName: string, x: number = 50, y: number = 50) => {
@@ -376,40 +493,37 @@ export default function App() {
       },
     };
 
-    setTemplates((prev) =>
-      prev.map((t) => {
-        if (t.id === activeTemplateId) {
-          return { ...t, fields: [...t.fields, newField] };
-        }
-        return t;
-      })
-    );
+    const updated = templates.map((t) => {
+      if (t.id === activeTemplateId) {
+        return { ...t, fields: [...t.fields, newField] };
+      }
+      return t;
+    });
+    recordHistory(updated);
     setActiveFieldId(newField.id);
   };
 
   const handleDeleteField = (id: string) => {
-    setTemplates((prev) =>
-      prev.map((t) => {
-        if (t.id === activeTemplateId) {
-          return { ...t, fields: t.fields.filter((f) => f.id !== id) };
-        }
-        return t;
-      })
-    );
+    const updated = templates.map((t) => {
+      if (t.id === activeTemplateId) {
+        return { ...t, fields: t.fields.filter((f) => f.id !== id) };
+      }
+      return t;
+    });
+    recordHistory(updated);
     if (activeFieldId === id) setActiveFieldId(null);
   };
 
   // --- Extras / QR, Signature, Watermark handlers ---
 
   const handleUpdateQrCode = (config: Partial<CertificateTemplate["qrCode"]>) => {
-    setTemplates((prev) =>
-      prev.map((t) => {
-        if (t.id === activeTemplateId) {
-          return { ...t, qrCode: { ...t.qrCode, ...config } };
-        }
-        return t;
-      })
-    );
+    const updated = templates.map((t) => {
+      if (t.id === activeTemplateId) {
+        return { ...t, qrCode: { ...t.qrCode, ...config } };
+      }
+      return t;
+    });
+    recordHistory(updated, 150);
   };
 
   const handleUpdateQrPosition = (x: number, y: number) => {
@@ -417,14 +531,13 @@ export default function App() {
   };
 
   const handleUpdateSignature = (config: Partial<CertificateTemplate["signature"]>) => {
-    setTemplates((prev) =>
-      prev.map((t) => {
-        if (t.id === activeTemplateId) {
-          return { ...t, signature: { ...t.signature, ...config } };
-        }
-        return t;
-      })
-    );
+    const updated = templates.map((t) => {
+      if (t.id === activeTemplateId) {
+        return { ...t, signature: { ...t.signature, ...config } };
+      }
+      return t;
+    });
+    recordHistory(updated, 150);
   };
 
   const handleUpdateSigPosition = (x: number, y: number) => {
@@ -432,31 +545,29 @@ export default function App() {
   };
 
   const handleUpdateWatermark = (config: Partial<CertificateTemplate["watermark"]>) => {
-    setTemplates((prev) =>
-      prev.map((t) => {
-        if (t.id === activeTemplateId) {
-          return { ...t, watermark: { ...t.watermark, ...config } };
-        }
-        return t;
-      })
-    );
+    const updated = templates.map((t) => {
+      if (t.id === activeTemplateId) {
+        return { ...t, watermark: { ...t.watermark, ...config } };
+      }
+      return t;
+    });
+    recordHistory(updated, 150);
   };
 
   const handleUpdateTemplateLayout = (layout: Partial<CertificateTemplate>) => {
-    setTemplates((prev) =>
-      prev.map((t) => {
-        if (t.id === activeTemplateId) {
-          return {
-            ...t,
-            fields: layout.fields || t.fields,
-            qrCode: layout.qrCode ? { ...t.qrCode, ...layout.qrCode } : t.qrCode,
-            signature: layout.signature ? { ...t.signature, ...layout.signature } : t.signature,
-            watermark: layout.watermark ? { ...t.watermark, ...layout.watermark } : t.watermark,
-          };
-        }
-        return t;
-      })
-    );
+    const updated = templates.map((t) => {
+      if (t.id === activeTemplateId) {
+        return {
+          ...t,
+          fields: layout.fields || t.fields,
+          qrCode: layout.qrCode ? { ...t.qrCode, ...layout.qrCode } : t.qrCode,
+          signature: layout.signature ? { ...t.signature, ...layout.signature } : t.signature,
+          watermark: layout.watermark ? { ...t.watermark, ...layout.watermark } : t.watermark,
+        };
+      }
+      return t;
+    });
+    recordHistory(updated);
   };
 
   // --- AI Smart Scan trigger ---
@@ -478,31 +589,30 @@ export default function App() {
       const data = await response.json();
       if (data && typeof data.x === "number") {
         // AI found correct spot! Update position of NAME field
-        setTemplates((prev) =>
-          prev.map((t) => {
-            if (t.id === activeTemplateId) {
-              return {
-                ...t,
-                fields: t.fields.map((f) => {
-                  if (f.name === "NAME") {
-                    return {
-                      ...f,
-                      x: data.x,
-                      y: data.y,
-                      style: {
-                        ...f.style,
-                        fontSize: data.fontSize * 12, // match to scaling factor
-                        alignment: data.alignment || "center",
-                      }
-                    };
-                  }
-                  return f;
-                })
-              };
-            }
-            return t;
-          })
-        );
+        const updated = templates.map((t) => {
+          if (t.id === activeTemplateId) {
+            return {
+              ...t,
+              fields: t.fields.map((f) => {
+                if (f.name === "NAME") {
+                  return {
+                    ...f,
+                    x: data.x,
+                    y: data.y,
+                    style: {
+                      ...f.style,
+                      fontSize: data.fontSize * 12, // match to scaling factor
+                      alignment: data.alignment || "center",
+                    }
+                  };
+                }
+                return f;
+              })
+            };
+          }
+          return t;
+        });
+        recordHistory(updated);
         setAiFeedback(`Gemini AI suggestion applied! Reason: ${data.reason}.`);
         setActiveFieldId("field-name");
       } else {
@@ -618,6 +728,30 @@ export default function App() {
 
           {/* Right Action Widgets */}
           <div className="flex items-center gap-2.5">
+            {/* Top Header Undo / Redo controls */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-0.5 border border-slate-200/60 dark:border-slate-700/60">
+              <button
+                onClick={handleUndo}
+                disabled={!canUndo}
+                id="top-hdr-undo-btn"
+                className="px-2 py-1 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer disabled:cursor-not-allowed"
+                title="Undo layout/style change (Ctrl+Z)"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+                <span className="hidden md:inline text-xs">Undo</span>
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={!canRedo}
+                id="top-hdr-redo-btn"
+                className="px-2 py-1 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer disabled:cursor-not-allowed"
+                title="Redo layout/style change (Ctrl+Y)"
+              >
+                <Redo2 className="w-3.5 h-3.5" />
+                <span className="hidden md:inline text-xs">Redo</span>
+              </button>
+            </div>
+
             <button
               onClick={() => setShowGlobalDownloadModal(true)}
               id="top-global-download-btn"
@@ -723,6 +857,11 @@ export default function App() {
                 qrCodeUrlDataUrl={qrCodeUrlDataUrl}
                 onAddField={handleAddField}
                 onAddHistory={handleAddHistory}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                canUndo={canUndo}
+                canRedo={canRedo}
+                historyStep={{ current: historyIndex + 1, total: historyStack.length }}
               />
 
               {/* Generator console form */}
