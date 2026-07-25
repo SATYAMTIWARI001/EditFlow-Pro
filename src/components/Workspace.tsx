@@ -1,7 +1,35 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useMemo } from "react";
 import { CertificateTemplate, CertificateField, ParticipantRecord } from "../types";
 import { getSmartTextScale, formatFieldValue } from "../lib/canvasUtils";
-import { Maximize2, QrCode, PenTool, Plus, Download, RefreshCw, FileDown, Award, Zap, Sparkles, Undo2, Redo2 } from "lucide-react";
+import {
+  Maximize2,
+  QrCode,
+  PenTool,
+  Plus,
+  Download,
+  RefreshCw,
+  FileDown,
+  Award,
+  Zap,
+  Sparkles,
+  Undo2,
+  Redo2,
+  Grid,
+  Eye,
+  EyeOff,
+  Crosshair,
+  AlignCenter,
+  MoveHorizontal,
+  MoveVertical,
+  AlignLeft,
+  AlignRight,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowDown,
+  Compass,
+  Sliders,
+} from "lucide-react";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 
@@ -60,6 +88,188 @@ export default function Workspace({
   const [customFieldName, setCustomFieldName] = useState("INFO");
   const [downloading, setDownloading] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState("");
+
+  // Snap to Grid & Alignment Engine
+  const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
+  const [gridSize, setGridSize] = useState<number>(10); // 10% grid step for 10x10 grid
+  const [showGridOverlay, setShowGridOverlay] = useState<boolean>(true);
+
+  // Snap coordinate helper function (snaps to nearest grid step)
+  const snapCoordinate = (val: number, step: number): number => {
+    const snapped = Math.round(val / step) * step;
+    return Math.max(0, Math.min(100, snapped));
+  };
+
+  // Get active item coordinates for guide lines
+  const activeItemCoords = useMemo(() => {
+    if (!activeFieldId) return null;
+    if (activeFieldId === "qr-code") {
+      return { x: template.qrCode.x, y: template.qrCode.y, name: "QR Code" };
+    }
+    if (activeFieldId === "signature") {
+      return { x: template.signature.x, y: template.signature.y, name: "Signature" };
+    }
+    const f = template.fields.find((field) => field.id === activeFieldId);
+    if (f) return { x: f.x, y: f.y, name: f.name };
+    return null;
+  }, [activeFieldId, template]);
+
+  // Keyboard Arrow Key precision nudging for active field
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (!activeFieldId) return;
+
+      let step = snapToGrid ? gridSize : 1;
+      if (e.shiftKey) step = 1; // Hold Shift for 1% fine adjustment
+
+      let curX = 50;
+      let curY = 50;
+
+      if (activeFieldId === "qr-code") {
+        curX = template.qrCode.x;
+        curY = template.qrCode.y;
+      } else if (activeFieldId === "signature") {
+        curX = template.signature.x;
+        curY = template.signature.y;
+      } else {
+        const f = template.fields.find((field) => field.id === activeFieldId);
+        if (!f) return;
+        curX = f.x;
+        curY = f.y;
+      }
+
+      let nextX = curX;
+      let nextY = curY;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        nextX = Math.max(0, curX - step);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        nextX = Math.min(100, curX + step);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        nextY = Math.max(0, curY - step);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        nextY = Math.min(100, curY + step);
+      } else {
+        return;
+      }
+
+      if (snapToGrid && !e.shiftKey) {
+        nextX = snapCoordinate(nextX, gridSize);
+        nextY = snapCoordinate(nextY, gridSize);
+      }
+
+      if (activeFieldId === "qr-code") {
+        onUpdateQrPosition(nextX, nextY);
+      } else if (activeFieldId === "signature") {
+        onUpdateSigPosition(nextX, nextY);
+      } else {
+        onUpdateFieldPosition(activeFieldId, nextX, nextY);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    activeFieldId,
+    snapToGrid,
+    gridSize,
+    template,
+    onUpdateFieldPosition,
+    onUpdateQrPosition,
+    onUpdateSigPosition,
+  ]);
+
+  // Alignment Quick Tools
+  const handleAlignElement = (
+    type: "center-h" | "center-v" | "left" | "right" | "top" | "bottom"
+  ) => {
+    if (!activeFieldId) return;
+
+    let curX = 50;
+    let curY = 50;
+
+    if (activeFieldId === "qr-code") {
+      curX = template.qrCode.x;
+      curY = template.qrCode.y;
+    } else if (activeFieldId === "signature") {
+      curX = template.signature.x;
+      curY = template.signature.y;
+    } else {
+      const f = template.fields.find((field) => field.id === activeFieldId);
+      if (f) {
+        curX = f.x;
+        curY = f.y;
+      }
+    }
+
+    let newX = curX;
+    let newY = curY;
+
+    if (type === "center-h") newX = 50;
+    if (type === "center-v") newY = 50;
+    if (type === "left") newX = 10;
+    if (type === "right") newX = 90;
+    if (type === "top") newY = 10;
+    if (type === "bottom") newY = 90;
+
+    if (activeFieldId === "qr-code") {
+      onUpdateQrPosition(newX, newY);
+    } else if (activeFieldId === "signature") {
+      onUpdateSigPosition(newX, newY);
+    } else {
+      onUpdateFieldPosition(activeFieldId, newX, newY);
+    }
+  };
+
+  // Direct Nudge Button Handler
+  const handleNudge = (dx: number, dy: number) => {
+    if (!activeFieldId) return;
+    let curX = 50;
+    let curY = 50;
+    if (activeFieldId === "qr-code") {
+      curX = template.qrCode.x;
+      curY = template.qrCode.y;
+    } else if (activeFieldId === "signature") {
+      curX = template.signature.x;
+      curY = template.signature.y;
+    } else {
+      const f = template.fields.find((field) => field.id === activeFieldId);
+      if (!f) return;
+      curX = f.x;
+      curY = f.y;
+    }
+
+    let step = snapToGrid ? gridSize : 1;
+    let newX = Math.max(0, Math.min(100, curX + dx * step));
+    let newY = Math.max(0, Math.min(100, curY + dy * step));
+
+    if (snapToGrid) {
+      newX = snapCoordinate(newX, gridSize);
+      newY = snapCoordinate(newY, gridSize);
+    }
+
+    if (activeFieldId === "qr-code") {
+      onUpdateQrPosition(newX, newY);
+    } else if (activeFieldId === "signature") {
+      onUpdateSigPosition(newX, newY);
+    } else {
+      onUpdateFieldPosition(activeFieldId, newX, newY);
+    }
+  };
 
   // Map placeholders to dynamic live text
   const getFieldText = (field: CertificateField) => {
@@ -125,8 +335,13 @@ export default function Workspace({
       const newYPixels = clientY - rect.top - dragOffset.y;
 
       // Convert back to percentages (capped between 0 and 100)
-      const pctX = Math.max(0, Math.min(100, (newXPixels / rect.width) * 100));
-      const pctY = Math.max(0, Math.min(100, (newYPixels / rect.height) * 100));
+      let pctX = Math.max(0, Math.min(100, (newXPixels / rect.width) * 100));
+      let pctY = Math.max(0, Math.min(100, (newYPixels / rect.height) * 100));
+
+      if (snapToGrid) {
+        pctX = snapCoordinate(pctX, gridSize);
+        pctY = snapCoordinate(pctY, gridSize);
+      }
 
       if (draggingId === "qr-code") {
         onUpdateQrPosition(pctX, pctY);
@@ -154,15 +369,19 @@ export default function Workspace({
       window.removeEventListener("touchmove", handleMove);
       window.removeEventListener("touchend", handleEnd);
     };
-  }, [draggingId, dragOffset, onUpdateFieldPosition, onUpdateQrPosition, onUpdateSigPosition]);
+  }, [draggingId, dragOffset, snapToGrid, gridSize, onUpdateFieldPosition, onUpdateQrPosition, onUpdateSigPosition]);
 
   // Handle click on canvas to reposition active field or drop custom text
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (isAddTextMode) {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        const pctX = ((e.clientX - rect.left) / rect.width) * 100;
-        const pctY = ((e.clientY - rect.top) / rect.height) * 100;
+        let pctX = ((e.clientX - rect.left) / rect.width) * 100;
+        let pctY = ((e.clientY - rect.top) / rect.height) * 100;
+        if (snapToGrid) {
+          pctX = snapCoordinate(pctX, gridSize);
+          pctY = snapCoordinate(pctY, gridSize);
+        }
         const nameToUse = customFieldName.trim().toUpperCase() || "TEXT";
         if (onAddField) {
           onAddField(nameToUse, pctX, pctY);
@@ -174,8 +393,12 @@ export default function Workspace({
 
     if (activeFieldId && containerRef.current && !draggingId) {
       const rect = containerRef.current.getBoundingClientRect();
-      const pctX = ((e.clientX - rect.left) / rect.width) * 100;
-      const pctY = ((e.clientY - rect.top) / rect.height) * 100;
+      let pctX = ((e.clientX - rect.left) / rect.width) * 100;
+      let pctY = ((e.clientY - rect.top) / rect.height) * 100;
+      if (snapToGrid) {
+        pctX = snapCoordinate(pctX, gridSize);
+        pctY = snapCoordinate(pctY, gridSize);
+      }
       onUpdateFieldPosition(activeFieldId, pctX, pctY);
     }
   };
@@ -358,10 +581,10 @@ export default function Workspace({
     <div className="flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-950 p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 min-h-[500px] shadow-inner select-none transition-colors" id="editor-workspace">
       
       {/* Top bar instructions, Undo/Redo controls, and "Click-to-Add-Text" button */}
-      <div className="w-full max-w-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400 mb-4 px-2">
+      <div className="w-full max-w-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400 mb-2 px-2">
         <span className="flex items-center gap-1.5 font-medium">
           <Maximize2 className="w-3.5 h-3.5 text-blue-500" />
-          <span>Click placeholder to edit. Drag to position.</span>
+          <span>Click placeholder to edit. Drag to position. Use Arrow keys to nudge.</span>
         </span>
         
         <div className="flex items-center gap-2 flex-wrap">
@@ -421,6 +644,126 @@ export default function Workspace({
         </div>
       </div>
 
+      {/* Snap to Grid & Alignment Editor Control Bar */}
+      <div className="w-full max-w-3xl flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-slate-900 p-2 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs mb-3 text-xs">
+        {/* Left: Snap & Grid Toggle controls */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            onClick={() => setSnapToGrid(!snapToGrid)}
+            id="workspace-snap-grid-btn"
+            className={`px-2.5 py-1.5 rounded-xl font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+              snapToGrid
+                ? "bg-blue-600 text-white shadow-xs"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+            }`}
+            title="Toggle Snap to Grid alignment when dragging or nudging fields"
+          >
+            <Grid className="w-3.5 h-3.5" />
+            <span>Snap to Grid {snapToGrid ? "ON" : "OFF"}</span>
+          </button>
+
+          {snapToGrid && (
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60 text-[11px]">
+              <button
+                onClick={() => setGridSize(10)}
+                className={`px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer ${
+                  gridSize === 10
+                    ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs"
+                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                }`}
+                title="10x10 Grid (10% steps)"
+              >
+                10x10 Grid
+              </button>
+              <button
+                onClick={() => setGridSize(5)}
+                className={`px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer ${
+                  gridSize === 5
+                    ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs"
+                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                }`}
+                title="20x20 Grid (5% fine steps)"
+              >
+                20x20 Grid
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={() => setShowGridOverlay(!showGridOverlay)}
+            id="workspace-toggle-grid-lines-btn"
+            className={`px-2.5 py-1.5 rounded-xl font-bold flex items-center gap-1 transition-all cursor-pointer ${
+              showGridOverlay
+                ? "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-900/40"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
+            }`}
+            title="Show / Hide visual grid lines on certificate canvas"
+          >
+            {showGridOverlay ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">Grid Lines</span>
+          </button>
+        </div>
+
+        {/* Right: Quick Alignment & Nudge tools for active selected element */}
+        {activeFieldId ? (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-extrabold uppercase text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded-lg border border-blue-200/50 dark:border-blue-900/40 font-mono">
+              {activeItemCoords ? `X:${Math.round(activeItemCoords.x)}% Y:${Math.round(activeItemCoords.y)}%` : "SELECTED"}
+            </span>
+
+            {/* Quick Align buttons */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700/60">
+              <button
+                onClick={() => handleAlignElement("center-h")}
+                className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-lg text-slate-700 dark:text-slate-200 transition-all cursor-pointer"
+                title="Align Center Horizontally (X: 50%)"
+              >
+                <MoveHorizontal className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => handleAlignElement("center-v")}
+                className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-lg text-slate-700 dark:text-slate-200 transition-all cursor-pointer"
+                title="Align Center Vertically (Y: 50%)"
+              >
+                <MoveVertical className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => handleAlignElement("left")}
+                className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-lg text-slate-700 dark:text-slate-200 transition-all cursor-pointer"
+                title="Align Left Margin (X: 10%)"
+              >
+                <AlignLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => handleAlignElement("right")}
+                className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-lg text-slate-700 dark:text-slate-200 transition-all cursor-pointer"
+                title="Align Right Margin (X: 90%)"
+              >
+                <AlignRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Directional Nudge Pad */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700/60 text-slate-700 dark:text-slate-200">
+              <button onClick={() => handleNudge(-1, 0)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-lg cursor-pointer" title="Nudge Left (ArrowLeft)">
+                <ArrowLeft className="w-3 h-3" />
+              </button>
+              <button onClick={() => handleNudge(0, -1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-lg cursor-pointer" title="Nudge Up (ArrowUp)">
+                <ArrowUp className="w-3 h-3" />
+              </button>
+              <button onClick={() => handleNudge(0, 1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-lg cursor-pointer" title="Nudge Down (ArrowDown)">
+                <ArrowDown className="w-3 h-3" />
+              </button>
+              <button onClick={() => handleNudge(1, 0)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-lg cursor-pointer" title="Nudge Right (ArrowRight)">
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <span className="text-[11px] text-slate-400 italic">Select placeholder or use Arrow keys to nudge</span>
+        )}
+      </div>
+
       {/* Main Certificate Wrapper */}
       <div
         ref={containerRef}
@@ -435,6 +778,89 @@ export default function Workspace({
           className="w-full h-full object-contain pointer-events-none"
           referrerPolicy="no-referrer"
         />
+
+        {/* Visual Snap Grid Overlay */}
+        {showGridOverlay && (
+          <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 opacity-60">
+            <defs>
+              <pattern
+                id={`workspace-grid-pattern-${gridSize}`}
+                width={`${gridSize}%`}
+                height={`${gridSize}%`}
+                patternUnits="userSpaceOnUse"
+              >
+                <path
+                  d={`M ${gridSize}% 0 L 0 0 0 ${gridSize}%`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="0.5"
+                  className="text-blue-500/25 dark:text-blue-400/20"
+                  strokeDasharray="2 2"
+                />
+              </pattern>
+            </defs>
+
+            {/* Grid background pattern */}
+            <rect width="100%" height="100%" fill={`url(#workspace-grid-pattern-${gridSize})`} />
+
+            {/* Horizontal & Vertical Center Guidelines */}
+            <line
+              x1="0"
+              y1="50%"
+              x2="100%"
+              y2="50%"
+              stroke="currentColor"
+              strokeWidth="1"
+              className="text-blue-500/60 dark:text-blue-400/60"
+              strokeDasharray="4 2"
+            />
+            <line
+              x1="50%"
+              y1="0"
+              x2="50%"
+              y2="100%"
+              stroke="currentColor"
+              strokeWidth="1"
+              className="text-blue-500/60 dark:text-blue-400/60"
+              strokeDasharray="4 2"
+            />
+          </svg>
+        )}
+
+        {/* Dynamic Crosshair Alignment Guides for Active Selected Field */}
+        {activeItemCoords && (
+          <svg className="absolute inset-0 w-full h-full pointer-events-none z-30">
+            {/* Vertical Guide through Active Element */}
+            <line
+              x1={`${activeItemCoords.x}%`}
+              y1="0"
+              x2={`${activeItemCoords.x}%`}
+              y2="100%"
+              stroke="#3b82f6"
+              strokeWidth="1"
+              strokeDasharray="3 3"
+            />
+            {/* Horizontal Guide through Active Element */}
+            <line
+              x1="0"
+              y1={`${activeItemCoords.y}%`}
+              x2="100%"
+              y2={`${activeItemCoords.y}%`}
+              stroke="#3b82f6"
+              strokeWidth="1"
+              strokeDasharray="3 3"
+            />
+            {/* Crosshairs marker at active center */}
+            <circle
+              cx={`${activeItemCoords.x}%`}
+              cy={`${activeItemCoords.y}%`}
+              r="3.5"
+              fill="#3b82f6"
+              stroke="#ffffff"
+              strokeWidth="1.5"
+            />
+          </svg>
+        )}
 
         {/* Security Watermark layer */}
         {template.watermark.enabled && template.watermark.text && (
