@@ -25,6 +25,7 @@ interface SidebarControlsProps {
   activeFieldId: string | null;
   onSelectField: (id: string | null) => void;
   onUpdateFieldStyle: (fieldId: string, style: Partial<FieldStyle>) => void;
+  onUpdateFieldProps?: (fieldId: string, props: Partial<CertificateField>) => void;
   onAddField: (placeholderName: string) => void;
   onDeleteField: (id: string) => void;
   onUpdateQrCode: (config: Partial<CertificateTemplate["qrCode"]>) => void;
@@ -41,6 +42,7 @@ export default function SidebarControls({
   activeFieldId,
   onSelectField,
   onUpdateFieldStyle,
+  onUpdateFieldProps,
   onAddField,
   onDeleteField,
   onUpdateQrCode,
@@ -56,6 +58,7 @@ export default function SidebarControls({
   const [aiCommand, setAiCommand] = useState<string>("");
   const [aiWorking, setAiWorking] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [selectedCharIndex, setSelectedCharIndex] = useState<number | null>(null);
 
   const handleAiCommandSubmit = async (e?: React.FormEvent, customCmd?: string) => {
     if (e) e.preventDefault();
@@ -440,20 +443,308 @@ export default function SidebarControls({
           </div>
         )}
 
-        {/* TAB 2: TEXT STYLES */}
+        {/* TAB 2: TEXT STYLES & CHARACTER CUSTOMIZER */}
         {activeTab === "styles" && activeField && (
-          <div className="space-y-5">
+          <div className="space-y-5 animate-fadeIn">
+            {/* Header info */}
             <div className="bg-slate-50 dark:bg-slate-950/30 p-3 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <div>
                 <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Styling Field</p>
                 <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{activeField.name}</p>
               </div>
               <button
-                onClick={() => onSelectField(null)}
+                onClick={() => {
+                  onSelectField(null);
+                  setSelectedCharIndex(null);
+                }}
                 className="text-[10px] bg-slate-200/60 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold px-2.5 py-1 rounded-md"
               >
                 Clear Focus
               </button>
+            </div>
+
+            {/* SECTION 1: DIRECT CHARACTER / TEXT EDITING */}
+            <div className="bg-gradient-to-r from-blue-50/80 to-indigo-50/80 dark:from-slate-950 dark:to-blue-950/20 p-3.5 rounded-2xl border border-blue-100 dark:border-blue-900/30 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-blue-900 dark:text-blue-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Type className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Edit Exact Text Content</span>
+                </label>
+                {activeField.customText !== undefined && activeField.customText !== "" && (
+                  <button
+                    onClick={() => onUpdateFieldProps?.(activeField.id, { customText: "" })}
+                    className="text-[10px] text-red-500 hover:underline font-semibold"
+                  >
+                    Reset to Dynamic
+                  </button>
+                )}
+              </div>
+
+              <textarea
+                rows={2}
+                value={activeField.customText !== undefined ? activeField.customText : (activeField.placeholder.startsWith("{{") ? activeField.name : activeField.placeholder)}
+                onChange={(e) => onUpdateFieldProps?.(activeField.id, { customText: e.target.value })}
+                placeholder="Type exact character string..."
+                className="w-full p-2.5 text-xs font-bold bg-white dark:bg-slate-900 border border-blue-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-800 dark:text-slate-100 shadow-xs"
+              />
+
+              {/* Character Transformers & Case Presets */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Character Case & Style Presets</span>
+                <div className="grid grid-cols-3 gap-1">
+                  <button
+                    onClick={() => {
+                      const cur = activeField.customText || activeField.name;
+                      onUpdateFieldProps?.(activeField.id, { customText: cur.toUpperCase() });
+                    }}
+                    className="py-1 text-[10px] font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/30 text-slate-700 dark:text-slate-300"
+                  >
+                    ALL CAPS
+                  </button>
+                  <button
+                    onClick={() => {
+                      const cur = activeField.customText || activeField.name;
+                      onUpdateFieldProps?.(activeField.id, { customText: cur.toLowerCase() });
+                    }}
+                    className="py-1 text-[10px] font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/30 text-slate-700 dark:text-slate-300"
+                  >
+                    lowercase
+                  </button>
+                  <button
+                    onClick={() => {
+                      const cur = activeField.customText || activeField.name;
+                      const title = cur.toLowerCase().replace(/\b\w/g, s => s.toUpperCase());
+                      onUpdateFieldProps?.(activeField.id, { customText: title });
+                    }}
+                    className="py-1 text-[10px] font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/30 text-slate-700 dark:text-slate-300"
+                  >
+                    Title Case
+                  </button>
+                  <button
+                    onClick={() => {
+                      const cur = activeField.customText || activeField.name;
+                      onUpdateFieldProps?.(activeField.id, { customText: cur.split("").join(" ") });
+                    }}
+                    className="py-1 text-[10px] font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/30 text-slate-700 dark:text-slate-300"
+                  >
+                    S P A C E D
+                  </button>
+                  <button
+                    onClick={() => {
+                      const cur = activeField.customText || activeField.name;
+                      const alt = cur.split("").map((c, i) => i % 2 === 0 ? c.toUpperCase() : c.toLowerCase()).join("");
+                      onUpdateFieldProps?.(activeField.id, { customText: alt });
+                    }}
+                    className="py-1 text-[10px] font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/30 text-slate-700 dark:text-slate-300"
+                  >
+                    SaTyAm
+                  </button>
+                  <button
+                    onClick={() => {
+                      const cur = activeField.customText || activeField.name;
+                      onUpdateFieldProps?.(activeField.id, { customText: cur.split("").reverse().join("") });
+                    }}
+                    className="py-1 text-[10px] font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/30 text-slate-700 dark:text-slate-300"
+                  >
+                    Reverse
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION 2: INDIVIDUAL LETTER-BY-LETTER INSPECTOR GRID */}
+            <div className="space-y-3 bg-slate-50/80 dark:bg-slate-950/20 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Per-Letter Inspector</span>
+                </label>
+                {activeField.characterOverrides && Object.keys(activeField.characterOverrides).length > 0 && (
+                  <button
+                    onClick={() => onUpdateFieldProps?.(activeField.id, { characterOverrides: {} })}
+                    className="text-[10px] text-red-500 hover:underline font-semibold"
+                  >
+                    Clear Letter Overrides
+                  </button>
+                )}
+              </div>
+
+              <p className="text-[10px] text-slate-400">
+                Click any letter badge below to customize its color, scale, vertical shift, or replace the character:
+              </p>
+
+              {/* Character badges row */}
+              <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                {(() => {
+                  const textVal = activeField.customText !== undefined && activeField.customText !== "" 
+                    ? activeField.customText 
+                    : (activeField.placeholder.startsWith("{{") ? activeField.name : activeField.placeholder);
+                  
+                  return textVal.split("").map((ch, idx) => {
+                    const isSelected = selectedCharIndex === idx;
+                    const charOverride = activeField.characterOverrides?.[idx];
+                    const hasOverride = charOverride && Object.keys(charOverride).length > 0;
+                    const displayChar = charOverride?.char !== undefined ? charOverride.char : ch;
+
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => setSelectedCharIndex(isSelected ? null : idx)}
+                        className={`min-w-[28px] h-7 px-1.5 text-xs font-extrabold rounded-lg border transition-all flex items-center justify-center relative ${
+                          isSelected
+                            ? "bg-indigo-600 text-white border-indigo-700 shadow-md scale-105"
+                            : hasOverride
+                            ? "bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-black"
+                            : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700"
+                        }`}
+                        title={`Letter #${idx + 1}: ${displayChar}`}
+                      >
+                        {displayChar === " " ? "␣" : displayChar}
+                        {hasOverride && !isSelected && (
+                          <span className="absolute top-[-2px] right-[-2px] w-2 h-2 rounded-full bg-amber-500" />
+                        )}
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
+
+              {/* Tweak settings for selected letter */}
+              {selectedCharIndex !== null && (
+                <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/30 rounded-xl border border-indigo-100 dark:border-indigo-900/40 space-y-3 animate-fadeIn">
+                  <div className="flex items-center justify-between border-b border-indigo-100 dark:border-indigo-900/30 pb-2">
+                    <span className="text-xs font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-wider">
+                      Letter #{selectedCharIndex + 1} Tweak
+                    </span>
+                    <button
+                      onClick={() => setSelectedCharIndex(null)}
+                      className="text-[10px] text-slate-400 hover:text-slate-600 font-bold"
+                    >
+                      Close ✕
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Letter replacement */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500">Replace Letter</label>
+                      <input
+                        type="text"
+                        maxLength={2}
+                        value={activeField.characterOverrides?.[selectedCharIndex]?.char || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const currentOverrides = activeField.characterOverrides || {};
+                          const prev = currentOverrides[selectedCharIndex] || {};
+                          onUpdateFieldProps?.(activeField.id, {
+                            characterOverrides: {
+                              ...currentOverrides,
+                              [selectedCharIndex]: { ...prev, char: val }
+                            }
+                          });
+                        }}
+                        placeholder="e.g. ★, A"
+                        className="w-full px-2 py-1 text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg"
+                      />
+                    </div>
+
+                    {/* Letter Color */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500">Letter Color</label>
+                      <input
+                        type="color"
+                        value={activeField.characterOverrides?.[selectedCharIndex]?.color || activeField.style.fontColor}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const currentOverrides = activeField.characterOverrides || {};
+                          const prev = currentOverrides[selectedCharIndex] || {};
+                          onUpdateFieldProps?.(activeField.id, {
+                            characterOverrides: {
+                              ...currentOverrides,
+                              [selectedCharIndex]: { ...prev, color: val }
+                            }
+                          });
+                        }}
+                        className="w-full h-7 border border-slate-200 rounded-lg p-0 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Letter Size Multiplier (Scale) */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] font-bold text-slate-500">
+                        <span>Size Scale</span>
+                        <span>{activeField.characterOverrides?.[selectedCharIndex]?.fontSizeScale || 1}x</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="2.5"
+                        step="0.1"
+                        value={activeField.characterOverrides?.[selectedCharIndex]?.fontSizeScale || 1}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          const currentOverrides = activeField.characterOverrides || {};
+                          const prev = currentOverrides[selectedCharIndex] || {};
+                          onUpdateFieldProps?.(activeField.id, {
+                            characterOverrides: {
+                              ...currentOverrides,
+                              [selectedCharIndex]: { ...prev, fontSizeScale: val }
+                            }
+                          });
+                        }}
+                        className="w-full accent-indigo-600 h-1 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Vertical Shift Offset */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] font-bold text-slate-500">
+                        <span>Vertical Shift</span>
+                        <span>{activeField.characterOverrides?.[selectedCharIndex]?.offsetY || 0}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="-20"
+                        max="20"
+                        value={activeField.characterOverrides?.[selectedCharIndex]?.offsetY || 0}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          const currentOverrides = activeField.characterOverrides || {};
+                          const prev = currentOverrides[selectedCharIndex] || {};
+                          onUpdateFieldProps?.(activeField.id, {
+                            characterOverrides: {
+                              ...currentOverrides,
+                              [selectedCharIndex]: { ...prev, offsetY: val }
+                            }
+                          });
+                        }}
+                        className="w-full accent-indigo-600 h-1 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Letter background highlight */}
+                  <div className="flex items-center justify-between pt-1 border-t border-indigo-100 dark:border-indigo-900/30">
+                    <span className="text-[10px] font-bold text-slate-500">Letter Highlight</span>
+                    <input
+                      type="color"
+                      value={activeField.characterOverrides?.[selectedCharIndex]?.bgColor || "#fef08a"}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const currentOverrides = activeField.characterOverrides || {};
+                        const prev = currentOverrides[selectedCharIndex] || {};
+                        onUpdateFieldProps?.(activeField.id, {
+                          characterOverrides: {
+                            ...currentOverrides,
+                            [selectedCharIndex]: { ...prev, bgColor: val }
+                          }
+                        });
+                      }}
+                      className="w-6 h-5 border border-slate-200 rounded p-0 cursor-pointer"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Typography family */}
@@ -562,10 +853,82 @@ export default function SidebarControls({
               </div>
             </div>
 
+            {/* SECTION 3: GRADIENT FILL & BADGE BOX */}
+            <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+              {/* Gradient Text Fill */}
+              <div className="space-y-2 bg-slate-50/50 dark:bg-slate-950/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Gradient Text Fill</span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!activeField.style.gradientEnabled}
+                      onChange={(e) => onUpdateFieldStyle(activeField.id, { gradientEnabled: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-7 h-3.5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+
+                {activeField.style.gradientEnabled && (
+                  <div className="grid grid-cols-2 gap-2 pt-1 animate-fadeIn">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-500">Start Color</span>
+                      <input
+                        type="color"
+                        value={activeField.style.gradientStart || "#2563eb"}
+                        onChange={(e) => onUpdateFieldStyle(activeField.id, { gradientStart: e.target.value })}
+                        className="w-full h-6 rounded border border-slate-200 p-0 cursor-pointer"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-500">End Color</span>
+                      <input
+                        type="color"
+                        value={activeField.style.gradientEnd || "#9333ea"}
+                        onChange={(e) => onUpdateFieldStyle(activeField.id, { gradientEnd: e.target.value })}
+                        className="w-full h-6 rounded border border-slate-200 p-0 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Badge Highlight Box */}
+              <div className="space-y-2 bg-slate-50/50 dark:bg-slate-950/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Badge Background Box</span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!activeField.style.bgHighlightEnabled}
+                      onChange={(e) => onUpdateFieldStyle(activeField.id, { bgHighlightEnabled: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-7 h-3.5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                {activeField.style.bgHighlightEnabled && (
+                  <div className="space-y-2 pt-1 animate-fadeIn">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-slate-500">Box Color</span>
+                      <input
+                        type="color"
+                        value={activeField.style.bgHighlightColor || "#f1f5f9"}
+                        onChange={(e) => onUpdateFieldStyle(activeField.id, { bgHighlightColor: e.target.value })}
+                        className="w-6 h-5 border border-slate-200 rounded p-0 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Colors picker palette */}
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <label className="text-xs font-semibold text-slate-500">Text Color</label>
+                <label className="text-xs font-semibold text-slate-500">Solid Text Color</label>
                 <input
                   type="color"
                   value={activeField.style.fontColor}
@@ -591,29 +954,11 @@ export default function SidebarControls({
               </div>
             </div>
 
-            {/* Text Cases transform */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-500">Text Transform</label>
-              <div className="grid grid-cols-4 bg-slate-100 dark:bg-slate-950/20 p-1 rounded-xl border border-slate-200/50 dark:border-slate-800 gap-1">
-                {(["none", "uppercase", "lowercase", "titlecase"] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => onUpdateFieldStyle(activeField.id, { textTransform: t })}
-                    className={`py-1.5 text-[10px] font-bold rounded-lg uppercase tracking-wider transition-colors ${
-                      activeField.style.textTransform === t ? "bg-slate-800 dark:bg-slate-700 text-white" : "text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800"
-                    }`}
-                  >
-                    {t === "none" ? "Abc" : t === "titlecase" ? "Ab" : t.slice(0, 3)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Spacing, Height, Rotate Sliders */}
             <div className="space-y-4 pt-3 border-t border-slate-100 dark:border-slate-800">
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs font-semibold text-slate-500">
-                  <span>Letter Spacing</span>
+                  <span>Letter Spacing (Tracking)</span>
                   <span>{activeField.style.letterSpacing}px</span>
                 </div>
                 <input

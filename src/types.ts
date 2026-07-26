@@ -2,6 +2,17 @@ export type FontWeight = "light" | "normal" | "medium" | "bold";
 export type TextAlignment = "left" | "center" | "right";
 export type TextTransform = "none" | "uppercase" | "lowercase" | "titlecase";
 
+export interface CharacterOverride {
+  char?: string;          // Custom letter replacement (e.g. 'A', '★', 'Ë')
+  color?: string;         // Individual character color
+  fontSizeScale?: number; // Size multiplier for this letter (e.g. 1.4 for drop cap)
+  offsetY?: number;       // Vertical shift in px (e.g. -6px for superscript)
+  bold?: boolean;         // Per-character bold
+  italic?: boolean;       // Per-character italic
+  underline?: boolean;    // Per-character underline
+  bgColor?: string;       // Background highlight for this specific letter
+}
+
 export interface FieldStyle {
   fontFamily: string;
   fontSize: number; // in px, relative to template scale
@@ -9,6 +20,7 @@ export interface FieldStyle {
   fontColor: string;
   alignment: TextAlignment;
   letterSpacing: number; // in px
+  wordSpacing?: number; // in px
   lineHeight: number;
   rotation: number; // in degrees
   opacity: number; // 0 to 1
@@ -22,6 +34,18 @@ export interface FieldStyle {
   isItalic: boolean;
   isUnderline: boolean;
   textTransform: TextTransform;
+
+  // Background Highlight Box / Badge
+  bgHighlightEnabled?: boolean;
+  bgHighlightColor?: string;
+  bgHighlightPadding?: number;
+  bgHighlightRadius?: number;
+
+  // Gradient Text Fill
+  gradientEnabled?: boolean;
+  gradientStart?: string;
+  gradientEnd?: string;
+  gradientAngle?: number;
 }
 
 export interface CertificateField {
@@ -32,6 +56,10 @@ export interface CertificateField {
   y: number; // percent from top (0-100)
   width: number; // percent width (0-100)
   style: FieldStyle;
+
+  // Character-level overrides & direct string value customization
+  customText?: string; // Direct character-by-character string override
+  characterOverrides?: Record<number, CharacterOverride>; // Individual letter customization indexed by position
 }
 
 export interface QRCodeConfig {

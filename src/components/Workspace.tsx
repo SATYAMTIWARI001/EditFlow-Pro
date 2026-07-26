@@ -38,6 +38,8 @@ interface WorkspaceProps {
   activeFieldId: string | null;
   onSelectField: (id: string | null) => void;
   onUpdateFieldPosition: (id: string, x: number, y: number) => void;
+  onUpdateFieldProps?: (fieldId: string, props: Partial<CertificateField>) => void;
+  onUpdateFieldStyle?: (fieldId: string, style: Partial<import("../types").FieldStyle>) => void;
   onUpdateQrPosition: (x: number, y: number) => void;
   onUpdateSigPosition: (x: number, y: number) => void;
   // Live preview test name
@@ -62,6 +64,8 @@ export default function Workspace({
   activeFieldId,
   onSelectField,
   onUpdateFieldPosition,
+  onUpdateFieldProps,
+  onUpdateFieldStyle,
   onUpdateQrPosition,
   onUpdateSigPosition,
   previewName,
@@ -271,8 +275,15 @@ export default function Workspace({
     }
   };
 
-  // Map placeholders to dynamic live text
+  // Inline editing state for direct on-canvas editing
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState<string>("");
+
+  // Map placeholders to dynamic live text (with customText support)
   const getFieldText = (field: CertificateField) => {
+    if (field.customText !== undefined && field.customText !== "") {
+      return field.customText;
+    }
     switch (field.name) {
       case "NAME":
         return previewName || "PARTICIPANT NAME";
@@ -287,7 +298,7 @@ export default function Workspace({
       case "CERTIFICATE_ID":
         return previewCertId || "GSA-2026-0081";
       default:
-        return field.placeholder; // fallback to {{FIELD}}
+        return field.placeholder.startsWith("{{") ? field.name : field.placeholder;
     }
   };
 
@@ -411,9 +422,10 @@ export default function Workspace({
       : "Assembling professional print vector PDF file..."
     );
 
+    let offscreen: HTMLDivElement | null = null;
     try {
       // 1. Setup offscreen container at full landscape print scale
-      const offscreen = document.createElement("div");
+      offscreen = document.createElement("div");
       offscreen.style.position = "absolute";
       offscreen.style.top = "-9999px";
       offscreen.style.left = "-9999px";
@@ -482,10 +494,43 @@ export default function Workspace({
           const src = field.placeholder.startsWith("{{") ? "https://img.icons8.com/color/120/google-logo.png" : field.placeholder;
           fieldEl.innerHTML = `<img src="${src}" style="width: 100%; height: auto; object-fit: contain;" />`;
         } else {
-          fieldEl.innerText = formatFieldValue(val, style.textTransform);
+          const formattedText = formatFieldValue(val, style.textTransform);
+          const chars = formattedText.split("");
+          const overrides = field.characterOverrides || {};
+          const hasCharacterOverrides = Object.keys(overrides).length > 0;
+
+          if (style.bgHighlightEnabled) {
+            fieldEl.style.backgroundColor = style.bgHighlightColor || "#f1f5f9";
+            fieldEl.style.padding = "2px 10px";
+            fieldEl.style.borderRadius = "8px";
+          }
+
+          if (hasCharacterOverrides) {
+            fieldEl.innerHTML = chars.map((origChar, idx) => {
+              const override = overrides[idx];
+              const charToRender = override?.char !== undefined ? override.char : origChar;
+              const charColor = override?.color || style.fontColor;
+              const fontScale = override?.fontSizeScale || 1;
+              const offsetY = override?.offsetY || 0;
+              const charBg = override?.bgColor;
+
+              const bgStyle = charBg ? `background-color: ${charBg}; padding: 0 2px; border-radius: 3px;` : "";
+              const transformStyle = offsetY ? `transform: translateY(${offsetY}px);` : "";
+              const colorStyle = style.gradientEnabled ? "" : `color: ${charColor};`;
+              
+              return `<span style="display: inline-block; font-size: ${fontScale * 100}%; ${colorStyle} ${bgStyle} ${transformStyle}">${charToRender === " " ? "&nbsp;" : charToRender}</span>`;
+            }).join("");
+          } else {
+            fieldEl.innerText = formattedText;
+          }
+
+          if (style.gradientEnabled) {
+            fieldEl.style.backgroundImage = `linear-gradient(135deg, ${style.gradientStart || "#2563eb"}, ${style.gradientEnd || "#9333ea"})`;
+            fieldEl.style.webkitBackgroundClip = "text";
+            fieldEl.style.webkitTextFillColor = "transparent";
+          }
+
           fieldEl.style.whiteSpace = "nowrap";
-          fieldEl.style.overflow = "hidden";
-          fieldEl.style.textOverflow = "ellipsis";
           if (shadow) fieldEl.style.cssText += shadow;
           if (stroke) fieldEl.style.cssText += stroke;
         }
@@ -527,8 +572,6 @@ export default function Workspace({
         useCORS: true,
         logging: false,
       });
-
-      document.body.removeChild(offscreen);
 
       const nameSlug = (previewName || "Participant").trim().replace(/\s+/g, "_");
 
@@ -573,6 +616,9 @@ export default function Workspace({
       console.error(err);
       setDownloadStatus("Failed to render high-res image canvas. Please check external asset URLs.");
     } finally {
+      if (offscreen && document.body.contains(offscreen)) {
+        document.body.removeChild(offscreen);
+      }
       setDownloading(false);
     }
   };
@@ -991,15 +1037,149 @@ export default function Workspace({
                     const src = field.placeholder.startsWith("{{") ? "https://img.icons8.com/color/120/google-logo.png" : field.placeholder;
                     return <img src={src} className="w-full h-auto object-contain" alt="Logo" referrerPolicy="no-referrer" />;
                   }
-                  return formatFieldValue(liveValue, style.textTransform);
+
+                  // Standard text field with rich character overrides and gradient support
+                  const formattedText = formatFieldValue(liveValue, style.textTransform);
+                  const chars = formattedText.split("");
+                  const overrides = field.characterOverrides || {};
+                  const hasCharacterOverrides = Object.keys(overrides).length > 0;
+
+                  // Gradient text style calculation
+                  const gradientStyle: React.CSSProperties = style.gradientEnabled ? {
+                    backgroundImage: `linear-gradient(135deg, ${style.gradientStart || "#2563eb"}, ${style.gradientEnd || "#9333ea"})`,
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                    display: "inline-block"
+                  } : {};
+
+                  // Badge highlight box style calculation
+                  const badgeStyle: React.CSSProperties = style.bgHighlightEnabled ? {
+                    backgroundColor: style.bgHighlightColor || "#f1f5f9",
+                    padding: "2px 10px",
+                    borderRadius: "8px",
+                    display: "inline-block",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.1)"
+                  } : {};
+
+                  return (
+                    <span 
+                      style={{ ...badgeStyle }} 
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setEditingFieldId(field.id);
+                        setEditingText(liveValue);
+                      }}
+                      title="Double-click to edit text inline"
+                    >
+                      {editingFieldId === field.id ? (
+                        <input
+                          type="text"
+                          autoFocus
+                          value={editingText}
+                          onChange={(e) => setEditingText(e.target.value)}
+                          onBlur={() => {
+                            onUpdateFieldProps?.(field.id, { customText: editingText });
+                            setEditingFieldId(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              onUpdateFieldProps?.(field.id, { customText: editingText });
+                              setEditingFieldId(null);
+                            }
+                            if (e.key === "Escape") {
+                              setEditingFieldId(null);
+                            }
+                          }}
+                          className="px-1 py-0.5 border-2 border-blue-600 rounded bg-white text-slate-900 font-bold focus:outline-none"
+                        />
+                      ) : hasCharacterOverrides ? (
+                        <span className="inline-flex flex-wrap items-baseline justify-center">
+                          {chars.map((origChar, idx) => {
+                            const override = overrides[idx];
+                            const charToRender = override?.char !== undefined ? override.char : origChar;
+                            const charColor = override?.color || style.fontColor;
+                            const fontScale = override?.fontSizeScale || 1;
+                            const offsetY = override?.offsetY || 0;
+                            const charBg = override?.bgColor;
+
+                            return (
+                              <span
+                                key={idx}
+                                style={{
+                                  color: style.gradientEnabled ? undefined : charColor,
+                                  fontSize: `${fontScale * 100}%`,
+                                  transform: offsetY ? `translateY(${offsetY}px)` : undefined,
+                                  backgroundColor: charBg,
+                                  padding: charBg ? "0 2px" : undefined,
+                                  borderRadius: charBg ? "3px" : undefined,
+                                  display: "inline-block",
+                                  ...gradientStyle
+                                }}
+                              >
+                                {charToRender === " " ? "\u00A0" : charToRender}
+                              </span>
+                            );
+                          })}
+                        </span>
+                      ) : (
+                        <span style={gradientStyle}>
+                          {formattedText}
+                        </span>
+                      )}
+                    </span>
+                  );
                 })()}
               </div>
 
-              {/* Active highlights */}
+              {/* Active field floating badge & quick action toolbar */}
               {isActive && (
-                <span className="absolute -top-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap pointer-events-none">
-                  {field.name} {Math.round(field.x)}%, {Math.round(field.y)}%
-                </span>
+                <div className="absolute -top-10 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-slate-900/90 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg shadow-xl border border-slate-700 whitespace-nowrap z-50">
+                  <span className="text-blue-400 font-extrabold mr-1">{field.name}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingFieldId(field.id);
+                      setEditingText(liveValue);
+                    }}
+                    className="hover:bg-slate-700 p-1 rounded text-xs text-amber-300"
+                    title="Inline Edit Text"
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateFieldStyle?.(field.id, { fontSize: Math.min(140, style.fontSize + 4) });
+                    }}
+                    className="hover:bg-slate-700 px-1.5 py-0.5 rounded text-xs"
+                    title="Increase Size"
+                  >
+                    A+
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateFieldStyle?.(field.id, { fontSize: Math.max(8, style.fontSize - 4) });
+                    }}
+                    className="hover:bg-slate-700 px-1.5 py-0.5 rounded text-xs"
+                    title="Decrease Size"
+                  >
+                    A-
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateFieldStyle?.(field.id, { isBold: !style.isBold });
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-xs font-black ${style.isBold ? "bg-blue-600 text-white" : "hover:bg-slate-700"}`}
+                    title="Bold Toggle"
+                  >
+                    B
+                  </button>
+                  <span className="text-slate-500 font-normal ml-1">
+                    ({Math.round(field.x)}%, {Math.round(field.y)}%)
+                  </span>
+                </div>
               )}
             </div>
           );

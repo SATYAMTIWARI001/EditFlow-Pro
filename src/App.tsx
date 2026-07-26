@@ -65,6 +65,9 @@ export default function App() {
       fields: t.fields.map((f) => ({
         ...f,
         style: { ...f.style },
+        characterOverrides: f.characterOverrides
+          ? JSON.parse(JSON.stringify(f.characterOverrides))
+          : undefined,
       })),
       qrCode: { ...t.qrCode },
       signature: { ...t.signature },
@@ -433,6 +436,24 @@ export default function App() {
           fields: t.fields.map((f) => {
             if (f.id === fieldId) {
               return { ...f, style: { ...f.style, ...styleOverrides } };
+            }
+            return f;
+          }),
+        };
+      }
+      return t;
+    });
+    recordHistory(updated, 150);
+  };
+
+  const handleUpdateFieldProps = (fieldId: string, props: Partial<CertificateField>) => {
+    const updated = templates.map((t) => {
+      if (t.id === activeTemplateId) {
+        return {
+          ...t,
+          fields: t.fields.map((f) => {
+            if (f.id === fieldId) {
+              return { ...f, ...props };
             }
             return f;
           }),
@@ -846,6 +867,8 @@ export default function App() {
                 activeFieldId={activeFieldId}
                 onSelectField={handleSelectField}
                 onUpdateFieldPosition={handleUpdateFieldPosition}
+                onUpdateFieldProps={handleUpdateFieldProps}
+                onUpdateFieldStyle={handleUpdateFieldStyle}
                 onUpdateQrPosition={handleUpdateQrPosition}
                 onUpdateSigPosition={handleUpdateSigPosition}
                 previewName={previewName}
@@ -892,6 +915,7 @@ export default function App() {
                 activeFieldId={activeFieldId}
                 onSelectField={handleSelectField}
                 onUpdateFieldStyle={handleUpdateFieldStyle}
+                onUpdateFieldProps={handleUpdateFieldProps}
                 onAddField={handleAddField}
                 onDeleteField={handleDeleteField}
                 onUpdateQrCode={handleUpdateQrCode}
