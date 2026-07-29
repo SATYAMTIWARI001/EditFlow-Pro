@@ -206,7 +206,9 @@ export default function ImageSuite() {
     const link = document.createElement("a");
     link.download = `editflow_${imageName}`;
     link.href = canvas.toDataURL("image/png");
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
     setHistoryLogs(prev => [...prev, "Exported high-resolution compiled PNG file"]);
   };
 

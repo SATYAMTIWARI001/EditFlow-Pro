@@ -62,6 +62,8 @@ import {
 } from "lucide-react";
 import Tesseract from "tesseract.js";
 import { PDFDocument, rgb, degrees } from "pdf-lib";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 
 interface DocElement {
   id: string;
@@ -1028,78 +1030,327 @@ export default function AcrobatStudio() {
     }));
   };
 
+  // Offscreen rendering pipeline for compiling Acrobat Studio document pages
+  const renderAcrobatPageToCanvas = async (pageCfg: PageConfig): Promise<HTMLCanvasElement> => {
+    const isPortrait = pageCfg.orientation === "portrait";
+    const widthPx = isPortrait ? 640 : 840;
+    const heightPx = isPortrait ? 880 : 600;
+
+    const offscreen = document.createElement("div");
+    offscreen.style.position = "absolute";
+    offscreen.style.top = "-9999px";
+    offscreen.style.left = "-9999px";
+    offscreen.style.width = `${widthPx}px`;
+    offscreen.style.height = `${heightPx}px`;
+    offscreen.style.backgroundColor = "#ffffff";
+    offscreen.style.overflow = "hidden";
+    offscreen.style.boxSizing = "border-box";
+    document.body.appendChild(offscreen);
+
+    const pageElements = elements.filter((el) => el.page === pageCfg.id);
+
+    pageElements.forEach((el) => {
+      const elDiv = document.createElement("div");
+      elDiv.style.position = "absolute";
+      elDiv.style.left = `${el.x}%`;
+      elDiv.style.top = `${el.y}%`;
+      elDiv.style.width = `${el.w}px`;
+      elDiv.style.height = `${el.h}px`;
+      elDiv.style.transform = `rotate(${el.rotation}deg)`;
+      elDiv.style.fontFamily = el.style.fontFamily || "Inter, sans-serif";
+      elDiv.style.fontSize = `${el.style.fontSize}px`;
+      elDiv.style.color = el.style.fontColor || "#1e293b";
+      elDiv.style.fontWeight = el.style.isBold ? "bold" : (el.style.fontWeight || "normal");
+      elDiv.style.fontStyle = el.style.isItalic ? "italic" : "normal";
+      elDiv.style.textDecoration = `${el.style.isUnderline ? "underline" : ""} ${el.style.isStrikethrough ? "line-through" : ""}`.trim();
+      elDiv.style.textAlign = el.style.alignment || "left";
+      elDiv.style.lineHeight = `${el.style.lineHeight || 1.4}`;
+      elDiv.style.opacity = `${el.style.opacity ?? 1}`;
+      elDiv.style.filter = `brightness(${el.style.brightness ?? 100}%) contrast(${el.style.contrast ?? 100}%) saturate(${el.style.saturation ?? 100}%)`;
+      elDiv.style.backgroundColor = el.style.backgroundColor || "transparent";
+      elDiv.style.borderColor = el.style.borderColor || "transparent";
+      elDiv.style.borderWidth = el.style.borderWidth ? `${el.style.borderWidth}px` : "0px";
+      elDiv.style.borderStyle = el.style.borderWidth ? "solid" : "none";
+      elDiv.style.boxSizing = "border-box";
+
+      if (el.type === "text") {
+        const p = document.createElement("p");
+        p.style.whiteSpace = "pre-wrap";
+        p.style.margin = "0";
+        p.style.lineHeight = "inherit";
+        p.innerText = el.content || "";
+        elDiv.appendChild(p);
+      } else if (el.type === "sticky_note") {
+        elDiv.style.backgroundColor = el.style.backgroundColor || "#fef08a";
+        elDiv.style.borderRadius = "8px";
+        elDiv.style.padding = "10px";
+        const tag = document.createElement("div");
+        tag.innerText = "Sticky Note";
+        tag.style.fontSize = "9px";
+        tag.style.fontWeight = "bold";
+        tag.style.textTransform = "uppercase";
+        tag.style.color = "#94a3b8";
+        const p = document.createElement("p");
+        p.innerText = el.content || "";
+        p.style.fontSize = "10px";
+        p.style.fontWeight = "bold";
+        p.style.marginTop = "4px";
+        p.style.color = el.style.fontColor || "#854d0e";
+        p.style.whiteSpace = "pre-wrap";
+        elDiv.appendChild(tag);
+        elDiv.appendChild(p);
+      } else if (el.type === "image" || el.type === "logo") {
+        const img = document.createElement("img");
+        img.src = el.content;
+        img.style.width = "100%";
+        img.style.height = "100%";
+        img.style.objectFit = el.type === "image" ? "cover" : "contain";
+        img.crossOrigin = "anonymous";
+        elDiv.appendChild(img);
+      } else if (el.type === "signature") {
+        const img = document.createElement("img");
+        img.src = el.content;
+        img.style.width = "100%";
+        img.style.height = "100%";
+        img.style.objectFit = "contain";
+        img.crossOrigin = "anonymous";
+        elDiv.appendChild(img);
+        const badge = document.createElement("div");
+        badge.innerText = "VERIFIED";
+        badge.style.position = "absolute";
+        badge.style.bottom = "2px";
+        badge.style.right = "2px";
+        badge.style.backgroundColor = "#22c55e";
+        badge.style.color = "#ffffff";
+        badge.style.padding = "1px 4px";
+        badge.style.borderRadius = "3px";
+        badge.style.fontSize = "8px";
+        badge.style.fontWeight = "900";
+        elDiv.appendChild(badge);
+      } else if (el.type === "table") {
+        const table = document.createElement("table");
+        table.style.width = "100%";
+        table.style.fontSize = "10px";
+        table.style.borderCollapse = "collapse";
+        table.style.backgroundColor = "#ffffff";
+        const tbody = document.createElement("tbody");
+        (el.style.tableData || []).forEach((row, rIdx) => {
+          const tr = document.createElement("tr");
+          if (rIdx === 0) {
+            tr.style.backgroundColor = "#f8fafc";
+            tr.style.fontWeight = "800";
+          } else {
+            tr.style.borderTop = "1px solid #f1f5f9";
+          }
+          row.forEach((cell) => {
+            const td = document.createElement("td");
+            td.innerText = cell;
+            td.style.padding = "6px";
+            td.style.textAlign = "center";
+            td.style.borderRight = "1px solid #f1f5f9";
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        elDiv.appendChild(table);
+      } else if (el.type === "checkbox" || el.type === "radio") {
+        const wrapper = document.createElement("div");
+        wrapper.style.display = "flex";
+        wrapper.style.alignItems = "center";
+        wrapper.style.gap = "6px";
+        const input = document.createElement("input");
+        input.type = el.type;
+        input.checked = !!el.style.checked;
+        const span = document.createElement("span");
+        span.innerText = el.content || "";
+        span.style.fontSize = "11px";
+        span.style.fontWeight = "bold";
+        wrapper.appendChild(input);
+        wrapper.appendChild(span);
+        elDiv.appendChild(wrapper);
+      } else if (el.type === "line" || el.type === "shape") {
+        elDiv.style.backgroundColor = el.style.backgroundColor || "#e2e8f0";
+        if (el.type === "shape") elDiv.style.borderRadius = "8px";
+      } else if (el.type === "form_field") {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = el.content || "";
+        input.placeholder = el.placeholder || "";
+        input.style.width = "100%";
+        input.style.height = "100%";
+        input.style.padding = "4px 8px";
+        input.style.fontSize = "12px";
+        input.style.border = "1px solid #cbd5e1";
+        input.style.borderRadius = "6px";
+        input.style.backgroundColor = "#f8fafc";
+        elDiv.appendChild(input);
+      } else if (el.type === "comment") {
+        elDiv.style.backgroundColor = "#eff6ff";
+        elDiv.style.border = "1px solid #bfdbfe";
+        elDiv.style.borderRadius = "8px";
+        elDiv.style.padding = "6px";
+        elDiv.style.fontSize = "10px";
+        elDiv.style.color = "#1d4ed8";
+        elDiv.innerText = el.content || "";
+      } else if (el.type === "attachment") {
+        elDiv.style.backgroundColor = "#f1f5f9";
+        elDiv.style.border = "1px solid #cbd5e1";
+        elDiv.style.borderRadius = "8px";
+        elDiv.style.padding = "6px";
+        elDiv.style.fontSize = "9px";
+        elDiv.innerText = `📎 ${el.content || "Attachment"}`;
+      } else {
+        elDiv.innerText = el.content || "";
+      }
+
+      offscreen.appendChild(elDiv);
+    });
+
+    await new Promise((r) => setTimeout(r, 250));
+
+    const canvas = await html2canvas(offscreen, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: "#ffffff"
+    });
+
+    if (document.body.contains(offscreen)) {
+      document.body.removeChild(offscreen);
+    }
+
+    return canvas;
+  };
+
   // Export fully compiled PDF & multi-format document files
   const downloadAcrobatPdf = async (format: "pdf" | "docx" | "png" | "txt" | "html" | "json" = "pdf") => {
-    const baseName = docName.replace(/\.[^/.]+$/, "");
+    const baseName = (docName || "Document").replace(/\.[^/.]+$/, "").trim();
     
     if (format === "pdf") {
       try {
-        const pdfDoc = await PDFDocument.create();
-        for (const pageCfg of pages) {
-          const width = pageCfg.orientation === "landscape" ? 842 : 595;
-          const height = pageCfg.orientation === "landscape" ? 595 : 842;
-          const page = pdfDoc.addPage([width, height]);
-          
-          const pageElements = elements.filter(el => el.page === pageCfg.id);
-          for (const el of pageElements) {
-            const xPos = (el.x / 100) * width;
-            const yPos = height - ((el.y / 100) * height);
-            
-            if (el.type === "text" || el.type === "sticky_note" || el.type === "comment" || el.type === "highlight") {
-              const safeText = (el.content || "").replace(/[^\x20-\x7E]/g, " ");
-              page.drawText(safeText, {
-                x: Math.max(10, xPos),
-                y: Math.max(20, yPos - (el.style?.fontSize || 12)),
-                size: el.style?.fontSize || 12,
-                color: rgb(0.1, 0.1, 0.2)
-              });
-            } else if (el.type === "line") {
-              page.drawLine({
-                start: { x: xPos, y: yPos },
-                end: { x: Math.min(width - 10, xPos + (el.w || 200)), y: yPos },
-                thickness: el.style?.borderWidth || 2,
-                color: rgb(0.2, 0.3, 0.8)
-              });
+        const firstPage = pages[0] || { id: 1, orientation: "portrait", size: "A4" };
+        const pdf = new jsPDF({
+          orientation: firstPage.orientation,
+          unit: "pt",
+          format: "a4"
+        });
+
+        for (let i = 0; i < pages.length; i++) {
+          const pageCfg = pages[i];
+          const pageCanvas = await renderAcrobatPageToCanvas(pageCfg);
+          const imgData = pageCanvas.toDataURL("image/png");
+
+          const isPortrait = pageCfg.orientation === "portrait";
+          const pWidth = isPortrait ? 595.28 : 841.89;
+          const pHeight = isPortrait ? 841.89 : 595.28;
+
+          if (i > 0) {
+            pdf.addPage([pWidth, pHeight], pageCfg.orientation);
+          }
+
+          pdf.addImage(imgData, "PNG", 0, 0, pWidth, pHeight, undefined, "FAST");
+        }
+
+        const pdfArrayBuffer = pdf.output("arraybuffer");
+        const blob = new Blob([pdfArrayBuffer], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${baseName}_edited.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+        }, 5000);
+      } catch (err) {
+        console.error("PDF generation error:", err);
+        // Fallback vector compile using pdf-lib (clean, non-corrupted output)
+        try {
+          const pdfDoc = await PDFDocument.create();
+          for (const pageCfg of pages) {
+            const width = pageCfg.orientation === "landscape" ? 842 : 595;
+            const height = pageCfg.orientation === "landscape" ? 595 : 842;
+            const page = pdfDoc.addPage([width, height]);
+            const pageElements = elements.filter(el => el.page === pageCfg.id);
+            for (const el of pageElements) {
+              const xPos = (el.x / 100) * width;
+              const yPos = height - ((el.y / 100) * height);
+              const safeText = (el.content || "").replace(/[\r\n]+/g, " ").replace(/[^\x20-\x7E]/g, " ");
+              if (safeText.trim()) {
+                page.drawText(safeText, {
+                  x: Math.max(10, xPos),
+                  y: Math.max(20, yPos - (el.style?.fontSize || 12)),
+                  size: el.style?.fontSize || 12,
+                  color: rgb(0.1, 0.1, 0.2)
+                });
+              }
             }
           }
+          const pdfBytes = await pdfDoc.save();
+          const blob = new Blob([pdfBytes], { type: "application/pdf" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `${baseName}_edited.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        } catch (fallbackErr) {
+          console.error("Fallback PDF generation failed:", fallbackErr);
         }
-        const pdfBytes = await pdfDoc.save();
-        const blob = new Blob([pdfBytes], { type: "application/pdf" });
+      }
+    } else if (format === "png") {
+      try {
+        const pageCanvas = await renderAcrobatPageToCanvas(pages[0] || { id: 1, orientation: "portrait", size: "A4" });
+        const dataUrl = pageCanvas.toDataURL("image/png");
         const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = `${baseName}_compiled.pdf`;
+        link.href = dataUrl;
+        link.download = `${baseName}_export.png`;
+        document.body.appendChild(link);
         link.click();
-      } catch (err) {
-        console.error("PDF-lib generation fallback:", err);
-        const txtSummary = `Document Name: ${docName}\nPages: ${pages.length}\n\n` + elements.map(e => e.content).filter(Boolean).join("\n\n");
-        const blob = new Blob([txtSummary], { type: "application/pdf" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = `${baseName}_export.pdf`;
-        link.click();
+        document.body.removeChild(link);
+      } catch (e) {
+        console.error("PNG export error:", e);
       }
     } else if (format === "docx" || format === "txt") {
       const textContent = `# ${docName}\n\n` + elements.map(el => el.content).filter(Boolean).join("\n\n");
       const mime = format === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "text/plain";
       const blob = new Blob([textContent], { type: mime });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
+      link.href = url;
       link.download = `${baseName}.${format}`;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
     } else if (format === "html") {
       const htmlContent = `<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8"/><title>${docName}</title></head>\n<body style="font-family: system-ui, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto;">\n<h1>${docName}</h1>\n` + elements.map(el => `<p>${el.content}</p>`).join("\n") + `\n</body>\n</html>`;
       const blob = new Blob([htmlContent], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
+      link.href = url;
       link.download = `${baseName}.html`;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
     } else if (format === "json") {
       const jsonContent = JSON.stringify({ docName, pages, elements }, null, 2);
       const blob = new Blob([jsonContent], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
+      link.href = url;
       link.download = `${baseName}_project.json`;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
     }
 
     setVersionHistory(prev => [

@@ -116,7 +116,10 @@ export default function PdfSuite() {
       const link = document.createElement("a");
       link.href = url;
       link.download = `merged_document_${Date.now()}.pdf`;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
       setMergeStatus("Successfully merged & downloaded!");
     } catch (err: any) {
       console.error(err);
@@ -175,7 +178,10 @@ export default function PdfSuite() {
       const link = document.createElement("a");
       link.href = url;
       link.download = `split_extracted_${Date.now()}.pdf`;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
       setSplitStatus("Split successfully! Check your downloads.");
     } catch (err: any) {
       console.error(err);
@@ -208,7 +214,10 @@ export default function PdfSuite() {
       const link = document.createElement("a");
       link.href = url;
       link.download = `rotated_document_${Date.now()}.pdf`;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
       setRotateStatus("Rotated and compiled successfully!");
     } catch (err: any) {
       console.error(err);

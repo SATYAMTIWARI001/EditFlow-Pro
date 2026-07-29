@@ -580,7 +580,9 @@ export default function Workspace({
         const link = document.createElement("a");
         link.download = `${nameSlug}_Certificate.png`;
         link.href = dataUrl;
+        document.body.appendChild(link);
         link.click();
+        document.body.removeChild(link);
       } else {
         const imgData = canvas.toDataURL("image/png");
         const pdf = new jsPDF({

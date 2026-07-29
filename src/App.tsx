@@ -388,10 +388,14 @@ export default function App() {
       watermark: template.watermark,
     };
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
+    link.href = url;
     link.download = `${template.name.trim().replace(/\s+/g, "_")}_LayoutConfig.json`;
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
 
   const handleImportTemplate = (file: File) => {
@@ -1060,10 +1064,14 @@ export default function App() {
                   setShowGlobalDownloadModal(false);
                   const txt = "EditFlow Pro Document Export\n\nDate: " + new Date().toLocaleDateString() + "\nStatus: Generated successfully";
                   const blob = new Blob([txt], { type: "text/plain" });
+                  const url = URL.createObjectURL(blob);
                   const link = document.createElement("a");
-                  link.href = URL.createObjectURL(blob);
+                  link.href = url;
                   link.download = "editflow_export.txt";
+                  document.body.appendChild(link);
                   link.click();
+                  document.body.removeChild(link);
+                  setTimeout(() => URL.revokeObjectURL(url), 5000);
                 }}
                 className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-850 transition-all flex flex-col items-start gap-2 text-left cursor-pointer group"
               >
