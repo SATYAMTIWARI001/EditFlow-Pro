@@ -907,6 +907,7 @@ export default function App() {
                 previewCertId={previewCertId}
                 setPreviewCertId={setPreviewCertId}
                 qrCodeUrlDataUrl={qrCodeUrlDataUrl}
+                participantRegistry={history}
                 onAddHistory={handleAddHistory}
               />
 

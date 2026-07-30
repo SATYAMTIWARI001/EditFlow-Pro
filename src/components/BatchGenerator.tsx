@@ -36,9 +36,221 @@ interface BatchGeneratorProps {
   previewCertId: string;
   setPreviewCertId: (v: string) => void;
   qrCodeUrlDataUrl: string;
+  participantRegistry?: ParticipantRecord[];
   // Callbacks
   onAddHistory: (record: ParticipantRecord) => void;
 }
+
+/**
+ * Replaces mustache and named placeholders in template text with actual record data.
+ */
+export const replaceTemplatePlaceholders = (
+  rawText: string,
+  data: {
+    name: string;
+    event: string;
+    college: string;
+    date: string;
+    organizer: string;
+    certId: string;
+    position?: string;
+    year?: string;
+    [key: string]: string | undefined;
+  }
+): string => {
+  if (!rawText) return "";
+  let val = rawText;
+
+  val = val.replace(/\{\{\s*NAME\s*\}\}/gi, data.name || "");
+  val = val.replace(/\{\{\s*EVENT\s*\}\}/gi, data.event || "");
+  val = val.replace(/\{\{\s*COLLEGE\s*\}\}/gi, data.college || "");
+  val = val.replace(/\{\{\s*DATE\s*\}\}/gi, data.date || "");
+  val = val.replace(/\{\{\s*ORGANIZER\s*\}\}/gi, data.organizer || "");
+  val = val.replace(/\{\{\s*CERTIFICATE_ID\s*\}\}/gi, data.certId || "");
+  val = val.replace(/\{\{\s*CERT_ID\s*\}\}/gi, data.certId || "");
+  val = val.replace(/\{\{\s*POSITION\s*\}\}/gi, data.position || "Participant");
+  val = val.replace(/\{\{\s*YEAR\s*\}\}/gi, data.year || new Date().getFullYear().toString());
+
+  return val;
+};
+
+/**
+ * Iterates through the participant registry and generates a ZIP archive
+ * containing individual PDFs for each record, ensuring all text placeholders
+ * are correctly replaced before PDF generation.
+ */
+export const generateParticipantRegistryZip = async (
+  records: ParticipantRecord[],
+  template: CertificateTemplate,
+  qrCodeUrlDataUrl: string,
+  onProgress?: (current: number, total: number, message: string) => void
+): Promise<Blob> => {
+  if (!records || records.length === 0) {
+    throw new Error("Participant registry is empty. No records to generate.");
+  }
+
+  const zip = new JSZip();
+
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    const recordName = record.name || `Participant_${i + 1}`;
+    const certId = record.certificateId || `ID_${i + 1}`;
+
+    if (onProgress) {
+      onProgress(i + 1, records.length, `Generating PDF ${i + 1} of ${records.length} for ${recordName}...`);
+    }
+
+    const recordData = {
+      name: recordName,
+      event: record.event || "Event",
+      college: record.college || "Institution",
+      date: record.date || new Date().toLocaleDateString(),
+      organizer: record.organizer || "Organizer",
+      certId: certId,
+      position: record.position || "Participant",
+      year: record.year || new Date().getFullYear().toString(),
+    };
+
+    const offscreen = document.createElement("div");
+    offscreen.style.position = "absolute";
+    offscreen.style.top = "-9999px";
+    offscreen.style.left = "-9999px";
+    offscreen.style.width = "1920px";
+    offscreen.style.height = "1357px";
+    offscreen.style.backgroundColor = "#fff";
+    document.body.appendChild(offscreen);
+
+    offscreen.innerHTML = `
+      <div style="position: relative; width: 1920px; height: 1357px; overflow: hidden;">
+        <img src="${template.imageSrc}" style="width: 1920px; height: 1357px; object-fit: contain;" />
+        ${template.watermark.enabled && template.watermark.text ? `
+          <div style="position: absolute; inset: 0; display: flex; items-center: center; justify-content: center; pointer-events: none; opacity: ${template.watermark.opacity}; transform: rotate(${template.watermark.rotation}deg); font-size: 110px; font-weight: 900; color: #000; font-family: Impact, sans-serif; letter-spacing: 0.5em; text-transform: uppercase;">
+            ${template.watermark.text}
+          </div>
+        ` : ""}
+      </div>
+    `;
+
+    const container = offscreen.firstElementChild as HTMLDivElement;
+
+    // Replace placeholders for all fields
+    template.fields.forEach((field) => {
+      let rawVal = field.customText || field.placeholder || "";
+      let val = replaceTemplatePlaceholders(rawVal, recordData);
+
+      if (!val || val === field.placeholder || val.startsWith("{{")) {
+        const fieldName = (field.name || "").toUpperCase();
+        if (fieldName === "NAME" || fieldName.includes("NAME")) val = recordData.name;
+        else if (fieldName === "EVENT" || fieldName.includes("EVENT") || fieldName.includes("TITLE")) val = recordData.event;
+        else if (fieldName === "COLLEGE" || fieldName.includes("COLLEGE") || fieldName.includes("INSTITUTION")) val = recordData.college;
+        else if (fieldName === "DATE" || fieldName.includes("DATE")) val = recordData.date;
+        else if (fieldName === "ORGANIZER" || fieldName.includes("ORGANIZER")) val = recordData.organizer;
+        else if (fieldName === "CERTIFICATE_ID" || fieldName.includes("CERT") || fieldName.includes("ID")) val = recordData.certId;
+        else if (fieldName.includes("POSITION") || fieldName.includes("ROLE")) val = recordData.position;
+        else if (fieldName.includes("YEAR")) val = recordData.year;
+      }
+
+      const style = field.style;
+      let renderedFontSize = style.fontSize;
+      if ((field.name || "").toUpperCase().includes("NAME")) {
+        renderedFontSize = style.fontSize * getSmartTextScale(val, 15);
+      }
+
+      const shadow = style.shadowBlur > 0
+        ? `text-shadow: ${style.shadowOffsetX}px ${style.shadowOffsetY}px ${style.shadowBlur}px ${style.shadowColor};`
+        : "";
+
+      const stroke = style.strokeWidth > 0
+        ? `-webkit-text-stroke: ${style.strokeWidth}px ${style.strokeColor};`
+        : "";
+
+      const fieldEl = document.createElement("div");
+      fieldEl.style.position = "absolute";
+      fieldEl.style.left = `${field.x}%`;
+      fieldEl.style.top = `${field.y}%`;
+      fieldEl.style.width = `${field.width}%`;
+      fieldEl.style.transform = `translate(-50%, -50%) rotate(${style.rotation}deg)`;
+      fieldEl.style.fontFamily = style.fontFamily;
+      fieldEl.style.fontSize = `${renderedFontSize * 1.5}px`;
+      fieldEl.style.fontWeight = style.isBold ? "bold" : style.fontWeight;
+      fieldEl.style.fontStyle = style.isItalic ? "italic" : "normal";
+      fieldEl.style.textDecoration = style.isUnderline ? "underline" : "none";
+      fieldEl.style.color = style.fontColor;
+      fieldEl.style.textAlign = style.alignment;
+      fieldEl.style.letterSpacing = `${style.letterSpacing}px`;
+      fieldEl.style.lineHeight = `${style.lineHeight}`;
+      fieldEl.style.opacity = `${style.opacity}`;
+      fieldEl.style.whiteSpace = "nowrap";
+      fieldEl.style.overflow = "hidden";
+      fieldEl.style.textOverflow = "ellipsis";
+      
+      fieldEl.innerText = formatFieldValue(val, style.textTransform);
+      if (shadow) fieldEl.style.cssText += shadow;
+      if (stroke) fieldEl.style.cssText += stroke;
+
+      container.appendChild(fieldEl);
+    });
+
+    if (template.qrCode.enabled && qrCodeUrlDataUrl) {
+      const qrEl = document.createElement("img");
+      qrEl.src = qrCodeUrlDataUrl;
+      qrEl.style.position = "absolute";
+      qrEl.style.left = `${template.qrCode.x}%`;
+      qrEl.style.top = `${template.qrCode.y}%`;
+      qrEl.style.width = `${template.qrCode.size}%`;
+      qrEl.style.aspectRatio = "1/1";
+      qrEl.style.transform = "translate(-50%, -50%)";
+      container.appendChild(qrEl);
+    }
+
+    if (template.signature.enabled && template.signature.imageSrc) {
+      const sigEl = document.createElement("img");
+      sigEl.src = template.signature.imageSrc;
+      sigEl.style.position = "absolute";
+      sigEl.style.left = `${template.signature.x}%`;
+      sigEl.style.top = `${template.signature.y}%`;
+      sigEl.style.width = `${template.signature.width}%`;
+      sigEl.style.transform = `translate(-50%, -50%) rotate(${template.signature.rotation}deg)`;
+      container.appendChild(sigEl);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    const canvas = await html2canvas(container, {
+      scale: 1.5,
+      useCORS: true,
+      logging: false,
+    });
+
+    document.body.removeChild(offscreen);
+
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4"
+    });
+
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+
+    const pdfArrayBuffer = pdf.output("arraybuffer");
+
+    const sanitizeName = recordName.trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
+    const sanitizeId = certId.trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
+    const fileName = `${sanitizeName}_${sanitizeId}.pdf`;
+
+    zip.file(fileName, pdfArrayBuffer);
+  }
+
+  if (onProgress) {
+    onProgress(records.length, records.length, "Compressing individual PDFs into ZIP file...");
+  }
+
+  const zipBlob = await zip.generateAsync({ type: "blob" });
+  return zipBlob;
+};
 
 export default function BatchGenerator({
   template,
@@ -55,9 +267,10 @@ export default function BatchGenerator({
   previewCertId,
   setPreviewCertId,
   qrCodeUrlDataUrl,
+  participantRegistry = [],
   onAddHistory,
 }: BatchGeneratorProps) {
-  const [activeTab, setActiveTab] = useState<"single" | "batch">("single");
+  const [activeTab, setActiveTab] = useState<"single" | "batch" | "registry">("single");
   const [exporting, setExporting] = useState<boolean>(false);
   const [exportProgress, setExportProgress] = useState<string>("");
 
@@ -413,6 +626,49 @@ export default function BatchGenerator({
     }
   };
 
+  // Handler to trigger ZIP download of individual PDFs for participant registry
+  const handleTriggerRegistryPdfZip = async () => {
+    if (!participantRegistry || participantRegistry.length === 0) {
+      setCsvError("No participant registry records available to process.");
+      return;
+    }
+
+    setExporting(true);
+    setBatchProgress(0);
+    setBatchTotal(participantRegistry.length);
+    setCsvError("");
+
+    try {
+      const zipBlob = await generateParticipantRegistryZip(
+        participantRegistry,
+        template,
+        qrCodeUrlDataUrl,
+        (curr, tot, msg) => {
+          setBatchProgress(curr);
+          setExportProgress(msg);
+        }
+      );
+
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement("a");
+      link.href = url;
+      const tName = (template.name || "Registry").trim().replace(/\s+/g, "_");
+      link.download = `${tName}_Participant_PDFs.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setExportProgress("Registry PDF ZIP successfully downloaded!");
+    } catch (err: any) {
+      console.error("Registry PDF export error:", err);
+      setCsvError(err.message || "Failed to generate registry PDF ZIP.");
+    } finally {
+      setExporting(false);
+      setBatchProgress(0);
+    }
+  };
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm p-6 space-y-6 transition-colors" id="batch-generator-root">
       {/* Tab Selectors */}
@@ -438,6 +694,17 @@ export default function BatchGenerator({
         >
           <Users className="w-4 h-4" />
           Batch CSV Mode
+        </button>
+        <button
+          onClick={() => setActiveTab("registry")}
+          className={`flex items-center gap-2 pb-3 text-sm font-bold border-b-2 transition-all ${
+            activeTab === "registry"
+              ? "border-blue-600 text-blue-600 dark:text-blue-400"
+              : "border-transparent text-slate-400 hover:text-slate-600"
+          }`}
+        >
+          <FileDown className="w-4 h-4" />
+          Registry PDF Batch ({participantRegistry.length})
         </button>
       </div>
 
@@ -660,6 +927,89 @@ export default function BatchGenerator({
                   <span>Generate Batch ({batchData.length})</span>
                 </button>
               </div>
+            </div>
+          )}
+
+          {csvError && (
+            <div className="flex items-center gap-2 p-3 bg-red-50/50 dark:bg-red-950/20 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/40 rounded-xl text-xs font-semibold">
+              <AlertCircle className="w-4 h-4" />
+              <span>{csvError}</span>
+            </div>
+          )}
+
+          {exporting && (
+            <div className="space-y-2 p-4 bg-blue-50/50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/40 rounded-xl text-xs font-semibold">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>{exportProgress}</span>
+              </div>
+              {batchTotal > 0 && (
+                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden mt-2">
+                  <div 
+                    className="bg-blue-600 h-full transition-all duration-150" 
+                    style={{ width: `${(batchProgress / batchTotal) * 100}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* REGISTRY PDF BATCH TAB */}
+      {activeTab === "registry" && (
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                Participant Registry PDF Batch Export
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Generate individual PDF certificates for all records in the participant registry. All placeholders will be auto-replaced before compilation into a ZIP archive.
+              </p>
+            </div>
+            <button
+              disabled={exporting || participantRegistry.length === 0}
+              onClick={handleTriggerRegistryPdfZip}
+              className="flex items-center gap-1.5 px-5 py-2.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl shadow-md shadow-blue-100 dark:shadow-none transition-all"
+            >
+              <FileDown className="w-4 h-4" />
+              <span>Download Registry PDFs (.zip)</span>
+            </button>
+          </div>
+
+          {participantRegistry.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <Users className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-400">No participant records in registry yet.</p>
+              <p className="text-[11px] text-slate-400 mt-1">Generate individual certificates or upload CSV data to populate the registry.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-h-[260px] rounded-xl border border-slate-100 dark:border-slate-800">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-950/30 text-slate-400 font-bold border-b border-slate-100 dark:border-slate-800">
+                    <th className="p-3">#</th>
+                    <th className="p-3">Certificate ID</th>
+                    <th className="p-3">Participant Name</th>
+                    <th className="p-3">Event</th>
+                    <th className="p-3">College</th>
+                    <th className="p-3">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {participantRegistry.map((rec, idx) => (
+                    <tr key={rec.id || idx} className="border-b border-slate-50 dark:border-slate-850 hover:bg-slate-50/50 dark:hover:bg-slate-900">
+                      <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
+                      <td className="p-3 font-mono text-slate-600 dark:text-slate-400 font-bold">{rec.certificateId}</td>
+                      <td className="p-3 font-bold text-slate-800 dark:text-slate-200">{rec.name}</td>
+                      <td className="p-3 text-slate-500">{rec.event}</td>
+                      <td className="p-3 text-slate-500">{rec.college}</td>
+                      <td className="p-3 text-slate-400">{rec.date}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 
