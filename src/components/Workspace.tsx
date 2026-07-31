@@ -563,14 +563,39 @@ export default function Workspace({
         container.appendChild(sigEl);
       }
 
-      // 5. Let offscreen content resolve fully, then snap via html2canvas
+      // 5. Let offscreen content resolve fully, wait for fonts & images, then snap via html2canvas
       setDownloadStatus("Polishing pixel matrices...");
-      await new Promise((resolve) => setTimeout(resolve, 350));
+
+      if (document.fonts && document.fonts.ready) {
+        try {
+          await document.fonts.ready;
+        } catch (e) {
+          console.warn("Font loading wait warning:", e);
+        }
+      }
+
+      const containerImgs = Array.from(container.querySelectorAll("img"));
+      if (containerImgs.length > 0) {
+        await Promise.all(
+          containerImgs.map((img) => {
+            if (img.complete && img.naturalWidth !== 0) return Promise.resolve();
+            return new Promise<void>((resolve) => {
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+            });
+          })
+        );
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const canvas = await html2canvas(container, {
-        scale: 1.5,
+        scale: 2.5,
         useCORS: true,
+        allowTaint: true,
         logging: false,
+        backgroundColor: "#ffffff",
+        imageTimeout: 15000,
       });
 
       const nameSlug = (previewName || "Participant").trim().replace(/\s+/g, "_");
@@ -592,8 +617,18 @@ export default function Workspace({
         });
         const width = pdf.internal.pageSize.getWidth();
         const height = pdf.internal.pageSize.getHeight();
-        pdf.addImage(imgData, "PNG", 0, 0, width, height);
-        pdf.save(`${nameSlug}_Certificate.pdf`);
+        pdf.addImage(imgData, "PNG", 0, 0, width, height, undefined, "NONE");
+        
+        const pdfArrayBuffer = pdf.output("arraybuffer");
+        const blob = new Blob([pdfArrayBuffer], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.download = `${nameSlug}_Certificate.pdf`;
+        link.href = url;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
       }
 
       // 6. Push verified logs record

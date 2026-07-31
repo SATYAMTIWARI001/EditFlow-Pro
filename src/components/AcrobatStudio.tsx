@@ -1030,11 +1030,81 @@ export default function AcrobatStudio() {
     }));
   };
 
+  /**
+   * Converts image source (URL, Data URL, SVG, Blob) into a pre-loaded, CORS-safe Data URL.
+   * Ensures images are embedded directly into the canvas without CORS or loading failures.
+   */
+  const loadAndPreprocessImage = async (src: string): Promise<string> => {
+    if (!src) return "";
+    if (src.startsWith("data:image/")) return src;
+
+    // Attempt fetch as blob first to convert to clean Data URL
+    try {
+      const res = await fetch(src, { mode: "cors" });
+      if (res.ok) {
+        const blob = await res.blob();
+        return await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string) || src);
+          reader.onerror = () => resolve(src);
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch (err) {
+      // Fetch failed or blocked by CORS, fallback to HTMLImageElement canvas render
+    }
+
+    return new Promise<string>((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth || 800;
+          canvas.height = img.naturalHeight || 600;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL("image/png"));
+            return;
+          }
+        } catch (e) {
+          console.warn("Canvas export fallback failed:", e);
+        }
+        resolve(src);
+      };
+      img.onerror = () => resolve(src);
+      img.src = src;
+    });
+  };
+
   // Offscreen rendering pipeline for compiling Acrobat Studio document pages
   const renderAcrobatPageToCanvas = async (pageCfg: PageConfig): Promise<HTMLCanvasElement> => {
     const isPortrait = pageCfg.orientation === "portrait";
     const widthPx = isPortrait ? 640 : 840;
     const heightPx = isPortrait ? 880 : 600;
+
+    // Wait for all web fonts to load
+    if (document.fonts && document.fonts.ready) {
+      try {
+        await document.fonts.ready;
+      } catch (e) {
+        console.warn("Font loading wait warning:", e);
+      }
+    }
+
+    const pageElements = elements.filter((el) => el.page === pageCfg.id);
+
+    // Preprocess all images to Data URLs to guarantee 100% embedding and avoid CORS or missing image bugs
+    const processedElements = await Promise.all(
+      pageElements.map(async (el) => {
+        if ((el.type === "image" || el.type === "logo" || el.type === "signature") && el.content) {
+          const dataUrl = await loadAndPreprocessImage(el.content);
+          return { ...el, content: dataUrl };
+        }
+        return el;
+      })
+    );
 
     const offscreen = document.createElement("div");
     offscreen.style.position = "absolute";
@@ -1047,9 +1117,7 @@ export default function AcrobatStudio() {
     offscreen.style.boxSizing = "border-box";
     document.body.appendChild(offscreen);
 
-    const pageElements = elements.filter((el) => el.page === pageCfg.id);
-
-    pageElements.forEach((el) => {
+    processedElements.forEach((el) => {
       const elDiv = document.createElement("div");
       elDiv.style.position = "absolute";
       elDiv.style.left = `${el.x}%`;
@@ -1200,6 +1268,19 @@ export default function AcrobatStudio() {
         elDiv.style.padding = "6px";
         elDiv.style.fontSize = "9px";
         elDiv.innerText = `📎 ${el.content || "Attachment"}`;
+      } else if (el.type === "highlight") {
+        elDiv.style.backgroundColor = el.style.highlightColor || "#bef264";
+        elDiv.style.borderRadius = "6px";
+        elDiv.style.padding = "2px 6px";
+        elDiv.style.display = "flex";
+        elDiv.style.alignItems = "center";
+        const p = document.createElement("p");
+        p.style.margin = "0";
+        p.style.fontSize = `${el.style.fontSize || 12}px`;
+        p.style.fontWeight = "600";
+        p.style.color = "#0f172a";
+        p.innerText = el.content || "";
+        elDiv.appendChild(p);
       } else {
         elDiv.innerText = el.content || "";
       }
@@ -1207,13 +1288,31 @@ export default function AcrobatStudio() {
       offscreen.appendChild(elDiv);
     });
 
-    await new Promise((r) => setTimeout(r, 250));
+    // Ensure all appended <img> elements have finished decoding/loading
+    const imgElements = Array.from(offscreen.querySelectorAll("img"));
+    if (imgElements.length > 0) {
+      await Promise.all(
+        imgElements.map((img) => {
+          if (img.complete && img.naturalWidth !== 0) return Promise.resolve();
+          return new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+          });
+        })
+      );
+    }
+
+    await new Promise((r) => setTimeout(r, 150));
 
     const canvas = await html2canvas(offscreen, {
-      scale: 2,
+      scale: 3,
       useCORS: true,
+      allowTaint: true,
       logging: false,
-      backgroundColor: "#ffffff"
+      backgroundColor: "#ffffff",
+      imageTimeout: 15000,
+      windowWidth: widthPx,
+      windowHeight: heightPx,
     });
 
     if (document.body.contains(offscreen)) {
@@ -1225,7 +1324,8 @@ export default function AcrobatStudio() {
 
   // Export fully compiled PDF & multi-format document files
   const downloadAcrobatPdf = async (format: "pdf" | "docx" | "png" | "txt" | "html" | "json" = "pdf") => {
-    const baseName = (docName || "Document").replace(/\.[^/.]+$/, "").trim();
+    const sanitizeName = (docName || "edited_document").trim().replace(/\.[^/.]+$/, "").replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
+    const baseName = sanitizeName || "edited_document";
     
     if (format === "pdf") {
       try {
@@ -1249,7 +1349,7 @@ export default function AcrobatStudio() {
             pdf.addPage([pWidth, pHeight], pageCfg.orientation);
           }
 
-          pdf.addImage(imgData, "PNG", 0, 0, pWidth, pHeight, undefined, "FAST");
+          pdf.addImage(imgData, "PNG", 0, 0, pWidth, pHeight, undefined, "NONE");
         }
 
         const pdfArrayBuffer = pdf.output("arraybuffer");
@@ -1266,43 +1366,9 @@ export default function AcrobatStudio() {
         setTimeout(() => {
           URL.revokeObjectURL(url);
         }, 5000);
-      } catch (err) {
+      } catch (err: any) {
         console.error("PDF generation error:", err);
-        // Fallback vector compile using pdf-lib (clean, non-corrupted output)
-        try {
-          const pdfDoc = await PDFDocument.create();
-          for (const pageCfg of pages) {
-            const width = pageCfg.orientation === "landscape" ? 842 : 595;
-            const height = pageCfg.orientation === "landscape" ? 595 : 842;
-            const page = pdfDoc.addPage([width, height]);
-            const pageElements = elements.filter(el => el.page === pageCfg.id);
-            for (const el of pageElements) {
-              const xPos = (el.x / 100) * width;
-              const yPos = height - ((el.y / 100) * height);
-              const safeText = (el.content || "").replace(/[\r\n]+/g, " ").replace(/[^\x20-\x7E]/g, " ");
-              if (safeText.trim()) {
-                page.drawText(safeText, {
-                  x: Math.max(10, xPos),
-                  y: Math.max(20, yPos - (el.style?.fontSize || 12)),
-                  size: el.style?.fontSize || 12,
-                  color: rgb(0.1, 0.1, 0.2)
-                });
-              }
-            }
-          }
-          const pdfBytes = await pdfDoc.save();
-          const blob = new Blob([pdfBytes], { type: "application/pdf" });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = `${baseName}_edited.pdf`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          setTimeout(() => URL.revokeObjectURL(url), 5000);
-        } catch (fallbackErr) {
-          console.error("Fallback PDF generation failed:", fallbackErr);
-        }
+        alert("Failed to export PDF: " + (err?.message || "Unknown error"));
       }
     } else if (format === "png") {
       try {
@@ -1314,8 +1380,9 @@ export default function AcrobatStudio() {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-      } catch (e) {
+      } catch (e: any) {
         console.error("PNG export error:", e);
+        alert("PNG export failed: " + (e?.message || "Unknown error"));
       }
     } else if (format === "docx" || format === "txt") {
       const textContent = `# ${docName}\n\n` + elements.map(el => el.content).filter(Boolean).join("\n\n");

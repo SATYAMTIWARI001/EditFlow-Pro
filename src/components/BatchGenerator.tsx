@@ -214,12 +214,36 @@ export const generateParticipantRegistryZip = async (
       container.appendChild(sigEl);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (document.fonts && document.fonts.ready) {
+      try {
+        await document.fonts.ready;
+      } catch (e) {
+        console.warn("Font loading wait warning:", e);
+      }
+    }
+
+    const containerImgs = Array.from(container.querySelectorAll("img"));
+    if (containerImgs.length > 0) {
+      await Promise.all(
+        containerImgs.map((img) => {
+          if (img.complete && img.naturalWidth !== 0) return Promise.resolve();
+          return new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+          });
+        })
+      );
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     const canvas = await html2canvas(container, {
-      scale: 1.5,
+      scale: 2.5,
       useCORS: true,
+      allowTaint: true,
       logging: false,
+      backgroundColor: "#ffffff",
+      imageTimeout: 15000,
     });
 
     document.body.removeChild(offscreen);
@@ -233,7 +257,7 @@ export const generateParticipantRegistryZip = async (
 
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight, undefined, "NONE");
 
     const pdfArrayBuffer = pdf.output("arraybuffer");
 
