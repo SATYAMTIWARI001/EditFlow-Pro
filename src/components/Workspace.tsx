@@ -1113,12 +1113,15 @@ export default function Workspace({
                           type="text"
                           autoFocus
                           value={editingText}
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
                           onChange={(e) => setEditingText(e.target.value)}
                           onBlur={() => {
                             onUpdateFieldProps?.(field.id, { customText: editingText });
                             setEditingFieldId(null);
                           }}
                           onKeyDown={(e) => {
+                            e.stopPropagation();
                             if (e.key === "Enter") {
                               onUpdateFieldProps?.(field.id, { customText: editingText });
                               setEditingFieldId(null);

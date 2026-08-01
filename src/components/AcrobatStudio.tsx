@@ -452,6 +452,8 @@ export default function AcrobatStudio() {
   const [isEditingInPlace, setIsEditingInPlace] = useState<boolean>(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [resizingId, setResizingId] = useState<string | null>(null);
+  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, w: 0, h: 0 });
 
   // Word online editor document state (Markdown/HTML format)
   const [wordText, setWordText] = useState<string>(
@@ -895,6 +897,70 @@ export default function AcrobatStudio() {
       window.removeEventListener("touchend", handleEnd);
     };
   }, [draggingId, dragOffset]);
+
+  // Resize element handle
+  const handleElementResizeStart = (e: React.MouseEvent | React.TouchEvent, id: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const item = elements.find(el => el.id === id);
+    if (!item || item.locked) return;
+
+    setSelectedId(id);
+    setResizingId(id);
+
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+    setResizeStart({
+      x: clientX,
+      y: clientY,
+      w: item.w,
+      h: item.h
+    });
+  };
+
+  useEffect(() => {
+    const handleResizeMove = (e: MouseEvent | TouchEvent) => {
+      if (!resizingId) return;
+
+      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+      const deltaX = clientX - resizeStart.x;
+      const deltaY = clientY - resizeStart.y;
+
+      const newW = Math.max(30, resizeStart.w + deltaX);
+      const newH = Math.max(15, resizeStart.h + deltaY);
+
+      setElements(prev => prev.map(el => {
+        if (el.id === resizingId) {
+          return { ...el, w: newW, h: newH };
+        }
+        return el;
+      }));
+    };
+
+    const handleResizeEnd = () => {
+      if (resizingId) {
+        saveStateToHistory();
+      }
+      setResizingId(null);
+    };
+
+    if (resizingId) {
+      window.addEventListener("mousemove", handleResizeMove);
+      window.addEventListener("mouseup", handleResizeEnd);
+      window.addEventListener("touchmove", handleResizeMove, { passive: false });
+      window.addEventListener("touchend", handleResizeEnd);
+    }
+
+    return () => {
+      window.removeEventListener("mousemove", handleResizeMove);
+      window.removeEventListener("mouseup", handleResizeEnd);
+      window.removeEventListener("touchmove", handleResizeMove);
+      window.removeEventListener("touchend", handleResizeEnd);
+    };
+  }, [resizingId, resizeStart]);
 
   // Update specific style of selected element
   const updateSelectedStyle = (key: string, value: any) => {
@@ -1805,6 +1871,25 @@ export default function AcrobatStudio() {
                         className="w-20"
                       />
                     </div>
+                    <label className="px-2.5 py-1 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-bold rounded-lg cursor-pointer flex items-center gap-1 transition-all">
+                      <FileUp className="w-3.5 h-3.5" />
+                      <span>Replace Image</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              saveStateToHistory();
+                              updateSelectedContent(reader.result as string);
+                            };
+                            reader.readAsDataURL(e.target.files[0]);
+                          }
+                        }}
+                        className="hidden"
+                      />
+                    </label>
                   </div>
                 </>
               )}
@@ -2034,19 +2119,22 @@ export default function AcrobatStudio() {
                                   )}
 
                                   {el.type === "form_field" && (
-                                    <div className="w-full h-full">
+                                    <div className="w-full h-full" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
                                       <input
                                         type="text"
-                                        disabled
                                         placeholder={el.placeholder}
                                         value={el.content}
-                                        className="w-full h-full px-2 py-1 text-xs border rounded-md font-semibold text-slate-700 bg-slate-50 border-slate-300"
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setElements(prev => prev.map(item => item.id === el.id ? { ...item, content: val } : item));
+                                        }}
+                                        className="w-full h-full px-2 py-1 text-xs border rounded-md font-semibold text-slate-800 bg-white border-slate-300 focus:ring-2 focus:ring-red-500 focus:outline-none"
                                       />
                                     </div>
                                   )}
 
                                   {el.type === "checkbox" && (
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
                                       <input
                                         type="checkbox"
                                         checked={el.style.checked || false}
@@ -2061,7 +2149,7 @@ export default function AcrobatStudio() {
                                   )}
 
                                   {el.type === "radio" && (
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
                                       <input
                                         type="radio"
                                         checked={el.style.checked || false}
@@ -2100,14 +2188,32 @@ export default function AcrobatStudio() {
                                   )}
 
                                   {el.type === "table" && (
-                                    <div className="w-full h-full overflow-hidden border border-slate-200 rounded-md">
-                                      <table className="w-full text-[10px] border-collapse bg-white">
+                                    <div className="w-full h-full overflow-hidden border border-slate-200 rounded-md bg-white">
+                                      <table className="w-full text-[10px] border-collapse">
                                         <tbody>
                                           {(el.style.tableData || []).map((row, rIdx) => (
-                                            <tr key={rIdx} className={rIdx === 0 ? "bg-slate-50 font-extrabold" : "border-t border-slate-100"}>
+                                            <tr key={rIdx} className={rIdx === 0 ? "bg-slate-100 font-extrabold" : "border-t border-slate-200"}>
                                               {row.map((cell, cIdx) => (
-                                                <td key={cIdx} className="p-1.5 text-center truncate border-r border-slate-100">
-                                                  {cell}
+                                                <td key={cIdx} className="p-0.5 text-center border-r border-slate-200">
+                                                  <input
+                                                    type="text"
+                                                    value={cell}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                    onChange={(e) => {
+                                                      const val = e.target.value;
+                                                      setElements(prev => prev.map(item => {
+                                                        if (item.id === el.id) {
+                                                          const newData = (item.style.tableData || []).map((r, rI) =>
+                                                            rI === rIdx ? r.map((c, cI) => cI === cIdx ? val : c) : r
+                                                          );
+                                                          return { ...item, style: { ...item.style, tableData: newData } };
+                                                        }
+                                                        return item;
+                                                      }));
+                                                    }}
+                                                    className="w-full bg-transparent text-center focus:bg-yellow-50 focus:outline-none border-none font-inherit text-[10px]"
+                                                  />
                                                 </td>
                                               ))}
                                             </tr>
@@ -2129,7 +2235,12 @@ export default function AcrobatStudio() {
 
                               {/* Hover & select borders resize handle icons */}
                               {isSelected && !el.locked && (
-                                <div className="absolute right-[-4px] bottom-[-4px] w-3 h-3 bg-red-600 rounded-full border border-white cursor-se-resize z-50 pointer-events-none" />
+                                <div
+                                  onMouseDown={(e) => handleElementResizeStart(e, el.id)}
+                                  onTouchStart={(e) => handleElementResizeStart(e, el.id)}
+                                  className="absolute right-[-6px] bottom-[-6px] w-4 h-4 bg-red-600 rounded-full border-2 border-white cursor-se-resize z-50 shadow-md hover:scale-125 transition-transform"
+                                  title="Drag to resize element"
+                                />
                               )}
                               {el.locked && (
                                 <div className="absolute top-1 right-1 p-0.5 bg-amber-500 text-white rounded shadow-sm">
