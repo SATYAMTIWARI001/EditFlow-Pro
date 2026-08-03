@@ -1595,14 +1595,25 @@ export default function AcrobatStudio() {
             </button>
           </div>
 
-          {/* Main download compile */}
+          {/* Main download compile buttons */}
+          <button
+            onClick={() => downloadAcrobatPdf("pdf")}
+            id="acrobat-quick-pdf-download-btn"
+            className="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md cursor-pointer transition-all hover:scale-105 active:scale-95"
+            title="Direct Download PDF document"
+          >
+            <Download className="w-4 h-4" />
+            <span>Download PDF</span>
+          </button>
+
           <button
             onClick={() => setShowDownloadModal(true)}
             id="acrobat-export-download-btn"
-            className="px-4 py-2 bg-gradient-to-r from-red-600 to-indigo-600 hover:from-red-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md cursor-pointer transition-all hover:scale-105 active:scale-95"
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md cursor-pointer transition-all hover:scale-105 active:scale-95"
+            title="More export formats (Word, Text, HTML, JSON)"
           >
-            <Download className="w-4 h-4" />
-            <span>Download / Export</span>
+            <FileText className="w-4 h-4" />
+            <span>All Formats</span>
           </button>
         </div>
 
