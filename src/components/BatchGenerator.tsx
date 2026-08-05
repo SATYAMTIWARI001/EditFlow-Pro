@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { CertificateTemplate, ParticipantRecord } from "../types";
-import { formatFieldValue, getSmartTextScale } from "../lib/canvasUtils";
+import { formatFieldValue, getSmartTextScale, fetchRemoteImageAsDataUrl } from "../lib/canvasUtils";
 import Papa from "papaparse";
 import JSZip from "jszip";
 import html2canvas from "html2canvas";
@@ -111,6 +111,12 @@ export const generateParticipantRegistryZip = async (
       year: record.year || new Date().getFullYear().toString(),
     };
 
+    // Pre-fetch remote images as base64 Data URLs to resolve CORS loading issues
+    const bgDataUrl = await fetchRemoteImageAsDataUrl(template.imageSrc);
+    const sigDataUrl = template.signature.enabled && template.signature.imageSrc 
+      ? await fetchRemoteImageAsDataUrl(template.signature.imageSrc)
+      : "";
+
     const offscreen = document.createElement("div");
     offscreen.style.position = "absolute";
     offscreen.style.top = "-9999px";
@@ -122,7 +128,7 @@ export const generateParticipantRegistryZip = async (
 
     offscreen.innerHTML = `
       <div style="position: relative; width: 1920px; height: 1357px; overflow: hidden;">
-        <img src="${template.imageSrc}" style="width: 1920px; height: 1357px; object-fit: contain;" />
+        <img src="${bgDataUrl || template.imageSrc}" style="width: 1920px; height: 1357px; object-fit: contain;" />
         ${template.watermark.enabled && template.watermark.text ? `
           <div style="position: absolute; inset: 0; display: flex; items-center: center; justify-content: center; pointer-events: none; opacity: ${template.watermark.opacity}; transform: rotate(${template.watermark.rotation}deg); font-size: 110px; font-weight: 900; color: #000; font-family: Impact, sans-serif; letter-spacing: 0.5em; text-transform: uppercase;">
             ${template.watermark.text}
@@ -203,9 +209,9 @@ export const generateParticipantRegistryZip = async (
       container.appendChild(qrEl);
     }
 
-    if (template.signature.enabled && template.signature.imageSrc) {
+    if (template.signature.enabled && (sigDataUrl || template.signature.imageSrc)) {
       const sigEl = document.createElement("img");
-      sigEl.src = template.signature.imageSrc;
+      sigEl.src = sigDataUrl || template.signature.imageSrc;
       sigEl.style.position = "absolute";
       sigEl.style.left = `${template.signature.x}%`;
       sigEl.style.top = `${template.signature.y}%`;

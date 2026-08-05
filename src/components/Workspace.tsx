@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useMemo } from "react";
 import { CertificateTemplate, CertificateField, ParticipantRecord } from "../types";
-import { getSmartTextScale, formatFieldValue } from "../lib/canvasUtils";
+import { getSmartTextScale, formatFieldValue, fetchRemoteImageAsDataUrl } from "../lib/canvasUtils";
 import {
   Maximize2,
   QrCode,
@@ -424,6 +424,12 @@ export default function Workspace({
 
     let offscreen: HTMLDivElement | null = null;
     try {
+      // Pre-fetch remote images as base64 Data URLs to resolve CORS loading issues
+      const bgDataUrl = await fetchRemoteImageAsDataUrl(template.imageSrc);
+      const sigDataUrl = template.signature.enabled && template.signature.imageSrc 
+        ? await fetchRemoteImageAsDataUrl(template.signature.imageSrc)
+        : "";
+
       // 1. Setup offscreen container at full landscape print scale
       offscreen = document.createElement("div");
       offscreen.style.position = "absolute";
@@ -436,7 +442,7 @@ export default function Workspace({
 
       offscreen.innerHTML = `
         <div style="position: relative; width: 1920px; height: 1357px; overflow: hidden;">
-          <img src="${template.imageSrc}" style="width: 1920px; height: 1357px; object-fit: contain;" />
+          <img src="${bgDataUrl || template.imageSrc}" style="width: 1920px; height: 1357px; object-fit: contain;" />
           ${template.watermark.enabled && template.watermark.text ? `
             <div style="position: absolute; inset: 0; display: flex; items-center: center; justify-content: center; pointer-events: none; opacity: ${template.watermark.opacity}; transform: rotate(${template.watermark.rotation}deg); font-size: 110px; font-weight: 900; color: #000; font-family: Impact, sans-serif; letter-spacing: 0.5em; text-transform: uppercase;">
               ${template.watermark.text}
@@ -448,7 +454,7 @@ export default function Workspace({
       const container = offscreen.firstElementChild as HTMLDivElement;
 
       // 2. Loop through all fields (including any dynamically added ones) and append them
-      template.fields.forEach((field) => {
+      for (const field of template.fields) {
         const val = getFieldText(field);
         const style = field.style;
         let renderedFontSize = style.fontSize;
@@ -491,8 +497,9 @@ export default function Workspace({
           const emoji = val || "⭐";
           fieldEl.innerHTML = `<span style="font-size: 2.2em; line-height: 1;">${emoji}</span>`;
         } else if (field.name.startsWith("LOGO_") || field.name === "LOGO_IMAGE") {
-          const src = field.placeholder.startsWith("{{") ? "https://img.icons8.com/color/120/google-logo.png" : field.placeholder;
-          fieldEl.innerHTML = `<img src="${src}" style="width: 100%; height: auto; object-fit: contain;" />`;
+          const rawSrc = field.placeholder.startsWith("{{") ? "https://img.icons8.com/color/120/google-logo.png" : field.placeholder;
+          const logoSrc = await fetchRemoteImageAsDataUrl(rawSrc);
+          fieldEl.innerHTML = `<img src="${logoSrc}" style="width: 100%; height: auto; object-fit: contain;" />`;
         } else {
           const formattedText = formatFieldValue(val, style.textTransform);
           const chars = formattedText.split("");
@@ -536,7 +543,7 @@ export default function Workspace({
         }
 
         container.appendChild(fieldEl);
-      });
+      }
 
       // 3. QR verification code image overlay
       if (template.qrCode.enabled && qrCodeUrlDataUrl) {
@@ -552,9 +559,9 @@ export default function Workspace({
       }
 
       // 4. Digital signature image overlay
-      if (template.signature.enabled && template.signature.imageSrc) {
+      if (template.signature.enabled && (sigDataUrl || template.signature.imageSrc)) {
         const sigEl = document.createElement("img");
-        sigEl.src = template.signature.imageSrc;
+        sigEl.src = sigDataUrl || template.signature.imageSrc;
         sigEl.style.position = "absolute";
         sigEl.style.left = `${template.signature.x}%`;
         sigEl.style.top = `${template.signature.y}%`;

@@ -64,6 +64,7 @@ import Tesseract from "tesseract.js";
 import { PDFDocument, rgb, degrees } from "pdf-lib";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
+import { fetchRemoteImageAsDataUrl } from "../lib/canvasUtils";
 
 interface DocElement {
   id: string;
@@ -1101,47 +1102,7 @@ export default function AcrobatStudio() {
    * Ensures images are embedded directly into the canvas without CORS or loading failures.
    */
   const loadAndPreprocessImage = async (src: string): Promise<string> => {
-    if (!src) return "";
-    if (src.startsWith("data:image/")) return src;
-
-    // Attempt fetch as blob first to convert to clean Data URL
-    try {
-      const res = await fetch(src, { mode: "cors" });
-      if (res.ok) {
-        const blob = await res.blob();
-        return await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve((reader.result as string) || src);
-          reader.onerror = () => resolve(src);
-          reader.readAsDataURL(blob);
-        });
-      }
-    } catch (err) {
-      // Fetch failed or blocked by CORS, fallback to HTMLImageElement canvas render
-    }
-
-    return new Promise<string>((resolve) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        try {
-          const canvas = document.createElement("canvas");
-          canvas.width = img.naturalWidth || 800;
-          canvas.height = img.naturalHeight || 600;
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            ctx.drawImage(img, 0, 0);
-            resolve(canvas.toDataURL("image/png"));
-            return;
-          }
-        } catch (e) {
-          console.warn("Canvas export fallback failed:", e);
-        }
-        resolve(src);
-      };
-      img.onerror = () => resolve(src);
-      img.src = src;
-    });
+    return fetchRemoteImageAsDataUrl(src);
   };
 
   // Offscreen rendering pipeline for compiling Acrobat Studio document pages

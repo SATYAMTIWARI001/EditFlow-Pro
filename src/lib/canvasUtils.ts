@@ -1,6 +1,61 @@
 import QRCode from "qrcode";
 
 /**
+ * Helper function to fetch remote image assets as Blobs and convert them to base64 DataURLs
+ * before processing in the PDF export engine to resolve CORS loading issues.
+ */
+export async function fetchRemoteImageAsDataUrl(src: string): Promise<string> {
+  if (!src) return "";
+  if (src.startsWith("data:image/") || src.startsWith("data:application/")) return src;
+
+  // Attempt fetch as Blob first to bypass CORS issues and convert to clean base64 DataURL
+  try {
+    const res = await fetch(src, { mode: "cors" });
+    if (res.ok) {
+      const blob = await res.blob();
+      return await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === "string" && reader.result.startsWith("data:image/")) {
+            resolve(reader.result);
+          } else {
+            resolve(src);
+          }
+        };
+        reader.onerror = () => resolve(src);
+        reader.readAsDataURL(blob);
+      });
+    }
+  } catch (err) {
+    console.warn("Blob fetch failed for remote image, falling back to Canvas draw:", err);
+  }
+
+  // Fallback: draw image onto an HTML5 Canvas element using anonymous CORS mode
+  return new Promise<string>((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth || img.width || 800;
+        canvas.height = img.naturalHeight || img.height || 600;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL("image/png"));
+          return;
+        }
+      } catch (e) {
+        console.warn("Canvas export fallback failed:", e);
+      }
+      resolve(src);
+    };
+    img.onerror = () => resolve(src);
+    img.src = src;
+  });
+}
+
+/**
  * Removes white/light background from an image (specifically for signatures)
  * and returns a transparent PNG base64 Data URL.
  */
