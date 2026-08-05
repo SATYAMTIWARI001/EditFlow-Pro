@@ -1,6 +1,61 @@
 import QRCode from "qrcode";
 
 /**
+ * Promise-based font loader utility that utilizes the document.fonts.ready API
+ * or checks individual font loading states to ensure all Google Fonts (Inter, Poppins, etc.)
+ * defined in index.html or used in documents are fully loaded before the PDF generation process begins,
+ * preventing layout shifts.
+ */
+export async function ensureFontsLoaded(
+  fontFamilies: string[] = [
+    "Inter",
+    "Poppins",
+    "Montserrat",
+    "Roboto",
+    "Playfair Display",
+    "JetBrains Mono",
+    "Space Grotesk",
+    "Orbitron"
+  ],
+  timeoutMs = 4000
+): Promise<boolean> {
+  if (typeof document === "undefined") return true;
+
+  try {
+    // 1. Wait for document.fonts.ready API
+    if ("fonts" in document && document.fonts && document.fonts.ready) {
+      await Promise.race([
+        document.fonts.ready,
+        new Promise((resolve) => setTimeout(resolve, timeoutMs))
+      ]);
+    }
+
+    // 2. Load / check individual font loading states
+    if ("fonts" in document && document.fonts && typeof document.fonts.load === "function") {
+      const loadTasks = fontFamilies.map(async (family) => {
+        if (!family) return;
+        try {
+          await document.fonts.load(`16px "${family}"`);
+          await document.fonts.load(`700 16px "${family}"`);
+        } catch (err) {
+          console.warn(`Font load check failed for font family "${family}":`, err);
+        }
+      });
+
+      await Promise.race([
+        Promise.all(loadTasks),
+        new Promise((resolve) => setTimeout(resolve, timeoutMs))
+      ]);
+    }
+
+    return true;
+  } catch (err) {
+    console.warn("ensureFontsLoaded utility caught error:", err);
+    return false;
+  }
+}
+
+/**
  * Helper function to fetch remote image assets as Blobs and convert them to base64 DataURLs
  * before processing in the PDF export engine to resolve CORS loading issues.
  */

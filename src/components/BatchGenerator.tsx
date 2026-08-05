@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { CertificateTemplate, ParticipantRecord } from "../types";
-import { formatFieldValue, getSmartTextScale, fetchRemoteImageAsDataUrl } from "../lib/canvasUtils";
+import { formatFieldValue, getSmartTextScale, fetchRemoteImageAsDataUrl, ensureFontsLoaded } from "../lib/canvasUtils";
 import Papa from "papaparse";
 import JSZip from "jszip";
 import html2canvas from "html2canvas";
@@ -88,6 +88,9 @@ export const generateParticipantRegistryZip = async (
   if (!records || records.length === 0) {
     throw new Error("Participant registry is empty. No records to generate.");
   }
+
+  // Ensure all custom web fonts are fully loaded before rendering
+  await ensureFontsLoaded();
 
   const zip = new JSZip();
 

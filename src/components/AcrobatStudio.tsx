@@ -64,7 +64,7 @@ import Tesseract from "tesseract.js";
 import { PDFDocument, rgb, degrees } from "pdf-lib";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
-import { fetchRemoteImageAsDataUrl } from "../lib/canvasUtils";
+import { fetchRemoteImageAsDataUrl, ensureFontsLoaded } from "../lib/canvasUtils";
 
 interface DocElement {
   id: string;
@@ -1111,14 +1111,8 @@ export default function AcrobatStudio() {
     const widthPx = isPortrait ? 640 : 840;
     const heightPx = isPortrait ? 880 : 600;
 
-    // Wait for all web fonts to load
-    if (document.fonts && document.fonts.ready) {
-      try {
-        await document.fonts.ready;
-      } catch (e) {
-        console.warn("Font loading wait warning:", e);
-      }
-    }
+    // Wait for all web fonts to load and prevent layout shifts
+    await ensureFontsLoaded();
 
     const pageElements = elements.filter((el) => el.page === pageCfg.id);
 

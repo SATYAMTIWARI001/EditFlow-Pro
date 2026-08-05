@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useMemo } from "react";
 import { CertificateTemplate, CertificateField, ParticipantRecord } from "../types";
-import { getSmartTextScale, formatFieldValue, fetchRemoteImageAsDataUrl } from "../lib/canvasUtils";
+import { getSmartTextScale, formatFieldValue, fetchRemoteImageAsDataUrl, ensureFontsLoaded } from "../lib/canvasUtils";
 import {
   Maximize2,
   QrCode,
@@ -424,6 +424,9 @@ export default function Workspace({
 
     let offscreen: HTMLDivElement | null = null;
     try {
+      // Ensure all custom web fonts are fully loaded to prevent layout shifts
+      await ensureFontsLoaded();
+
       // Pre-fetch remote images as base64 Data URLs to resolve CORS loading issues
       const bgDataUrl = await fetchRemoteImageAsDataUrl(template.imageSrc);
       const sigDataUrl = template.signature.enabled && template.signature.imageSrc 
