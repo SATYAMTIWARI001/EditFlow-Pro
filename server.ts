@@ -35,13 +35,13 @@ app.post("/api/analyze-template", async (req, res) => {
 
     const ai = getGeminiClient();
     if (!ai) {
-      // Fallback response if API key is not configured
+      // Return default center placement fallback cleanly
       return res.json({
         x: 50,
         y: 50,
         fontSize: 5,
         alignment: "center",
-        reason: "Default center placement (AI model offline: GEMINI_API_KEY not configured)",
+        reason: "Default center placement.",
         isFallback: true
       });
     }
@@ -111,12 +111,8 @@ Do not wrap the response in markdown code blocks like \`\`\`json. Return ONLY th
     }
   } catch (error: any) {
     console.error("Error in AI analysis:", error);
-    res.json({
-      x: 50,
-      y: 50,
-      fontSize: 5,
-      alignment: "center",
-      reason: `Error during AI analysis: ${error.message || error}. Using default center.`,
+    res.status(500).json({
+      error: error.message || "Failed to analyze template with AI.",
       isFallback: true
     });
   }

@@ -1028,22 +1028,29 @@ export default function AcrobatStudio() {
       });
 
       const data = await res.json();
-      setAiOutput(data.response || "No response received.");
+      if (!res.ok) {
+        throw new Error(data.error || `Server error (${res.status})`);
+      }
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      const rawResponse = data.response || "";
+      if (rawResponse.toLowerCase().includes("permission_denied") || rawResponse.toLowerCase().includes("api key") || rawResponse.toLowerCase().includes("leaked")) {
+        throw new Error("AI Service authorization error. Please check API key configuration.");
+      }
+
+      setAiOutput("AI proofing completed successfully.");
       
-      // Auto-substitute text if proofed successfully
-      if (data.response && !data.response.includes("error")) {
-        const optimized = data.response.replace(/^Response:\s*/i, "").trim();
+      const optimized = rawResponse.replace(/^Response:\s*/i, "").trim();
+      if (optimized && !optimized.toLowerCase().startsWith("error")) {
         saveStateToHistory();
         updateSelectedContent(optimized);
       }
     } catch (err: any) {
-      setAiOutput("Proofing offline: Simulated auto-correction applied.");
-      // fallback
-      if (action === "spell") {
-        updateSelectedContent(item.content.replace(/relevent/gi, "relevant").replace(/calender/gi, "calendar"));
-      } else if (action === "expand") {
-        updateSelectedContent(item.content + " This deliverable represents an essential baseline for modern publishing grids and document layout flows.");
-      }
+      console.error("AI proofing failed:", err);
+      setAiOutput(`AI Proofing failed: ${err.message || "Request error"}. Document content unchanged.`);
     } finally {
       setAiWorking(false);
     }
@@ -1350,6 +1357,7 @@ export default function AcrobatStudio() {
     
     if (format === "pdf") {
       try {
+        console.log("[PDF Engine] Starting PDF generation for document:", baseName);
         const firstPage = pages[0] || { id: 1, orientation: "portrait", size: "A4" };
         const pdf = new jsPDF({
           orientation: firstPage.orientation,
@@ -1359,6 +1367,7 @@ export default function AcrobatStudio() {
 
         for (let i = 0; i < pages.length; i++) {
           const pageCfg = pages[i];
+          console.log(`[PDF Engine] Rendering page ${i + 1}/${pages.length}...`);
           const pageCanvas = await renderAcrobatPageToCanvas(pageCfg);
           const imgData = pageCanvas.toDataURL("image/png");
 
@@ -1373,7 +1382,15 @@ export default function AcrobatStudio() {
           pdf.addImage(imgData, "PNG", 0, 0, pWidth, pHeight, undefined, "NONE");
         }
 
+        console.log("[PDF Engine] Finalizing PDF binary stream...");
         const pdfArrayBuffer = pdf.output("arraybuffer");
+
+        if (!pdfArrayBuffer || pdfArrayBuffer.byteLength < 100) {
+          throw new Error("PDF generation produced an empty or invalid binary output.");
+        }
+
+        console.log("[PDF Engine] PDF created successfully. Byte size:", pdfArrayBuffer.byteLength);
+
         const blob = new Blob([pdfArrayBuffer], { type: "application/pdf" });
         const url = URL.createObjectURL(blob);
 
@@ -1381,12 +1398,13 @@ export default function AcrobatStudio() {
         link.href = url;
         link.download = `${baseName}_edited.pdf`;
         document.body.appendChild(link);
+        console.log("[PDF Engine] Initiating download for:", `${baseName}_edited.pdf`);
         link.click();
         document.body.removeChild(link);
 
         setTimeout(() => {
           URL.revokeObjectURL(url);
-        }, 5000);
+        }, 10000);
       } catch (err: any) {
         console.error("PDF generation error:", err);
         alert("Failed to export PDF: " + (err?.message || "Unknown error"));

@@ -110,6 +110,11 @@ export default function PdfSuite() {
 
       setMergeStatus("Encoding PDF streams...");
       const pdfBytes = await mergedPdf.save();
+      if (!pdfBytes || pdfBytes.byteLength < 100) {
+        throw new Error("Merged PDF buffer is empty or corrupted.");
+      }
+
+      console.log("[PDF Engine] Successfully generated merged PDF, size:", pdfBytes.byteLength, "bytes");
       const blob = new Blob([pdfBytes], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
 
@@ -117,9 +122,10 @@ export default function PdfSuite() {
       link.href = url;
       link.download = `merged_document_${Date.now()}.pdf`;
       document.body.appendChild(link);
+      console.log("[PDF Engine] Initiating download for merged PDF...");
       link.click();
       document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
       setMergeStatus("Successfully merged & downloaded!");
     } catch (err: any) {
       console.error(err);
@@ -172,6 +178,11 @@ export default function PdfSuite() {
       copiedPages.forEach((page) => newPdf.addPage(page));
 
       const pdfBytes = await newPdf.save();
+      if (!pdfBytes || pdfBytes.byteLength < 100) {
+        throw new Error("Split PDF buffer is empty or corrupted.");
+      }
+
+      console.log("[PDF Engine] Split PDF generated successfully, size:", pdfBytes.byteLength, "bytes");
       const blob = new Blob([pdfBytes], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
 
@@ -179,9 +190,10 @@ export default function PdfSuite() {
       link.href = url;
       link.download = `split_extracted_${Date.now()}.pdf`;
       document.body.appendChild(link);
+      console.log("[PDF Engine] Initiating download for split PDF...");
       link.click();
       document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
       setSplitStatus("Split successfully! Check your downloads.");
     } catch (err: any) {
       console.error(err);
@@ -208,6 +220,11 @@ export default function PdfSuite() {
 
       setRotateStatus("Compressing visual layers...");
       const pdfBytes = await srcPdf.save();
+      if (!pdfBytes || pdfBytes.byteLength < 100) {
+        throw new Error("Rotated PDF buffer is empty or corrupted.");
+      }
+
+      console.log("[PDF Engine] Rotated PDF compiled successfully, size:", pdfBytes.byteLength, "bytes");
       const blob = new Blob([pdfBytes], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
 
@@ -215,9 +232,10 @@ export default function PdfSuite() {
       link.href = url;
       link.download = `rotated_document_${Date.now()}.pdf`;
       document.body.appendChild(link);
+      console.log("[PDF Engine] Initiating download for rotated PDF...");
       link.click();
       document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
       setRotateStatus("Rotated and compiled successfully!");
     } catch (err: any) {
       console.error(err);

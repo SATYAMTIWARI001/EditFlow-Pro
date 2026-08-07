@@ -524,7 +524,27 @@ export default function BatchGenerator({
       const height = pdf.internal.pageSize.getHeight();
 
       pdf.addImage(imgData, "PNG", 0, 0, width, height);
-      pdf.save(`${previewName.trim().replace(/\s+/g, "_")}_Certificate.pdf`);
+
+      const pdfArrayBuffer = pdf.output("arraybuffer");
+      if (!pdfArrayBuffer || pdfArrayBuffer.byteLength < 100) {
+        throw new Error("Batch PDF output binary is empty or invalid.");
+      }
+
+      console.log("[PDF Engine] Batch single certificate PDF compiled successfully. Size:", pdfArrayBuffer.byteLength);
+
+      const blob = new Blob([pdfArrayBuffer], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+
+      const filename = `${previewName.trim().replace(/\s+/g, "_")}_Certificate.pdf`;
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      console.log("[PDF Engine] Initiating download for batch certificate:", filename);
+      link.click();
+      document.body.removeChild(link);
+
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
 
       // Add to History
       onAddHistory({

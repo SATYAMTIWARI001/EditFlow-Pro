@@ -186,6 +186,7 @@ export default function TemplateLibrary({
         link.href = dataUrl;
         link.click();
       } else {
+        console.log("[PDF Engine] Generating quick sample PDF for:", quickName);
         const imgData = canvas.toDataURL("image/png");
         const pdf = new jsPDF({
           orientation: "landscape",
@@ -195,7 +196,27 @@ export default function TemplateLibrary({
         const width = pdf.internal.pageSize.getWidth();
         const height = pdf.internal.pageSize.getHeight();
         pdf.addImage(imgData, "PNG", 0, 0, width, height);
-        pdf.save(`${quickName.trim().replace(/\s+/g, "_")}_Certificate.pdf`);
+
+        const pdfArrayBuffer = pdf.output("arraybuffer");
+        if (!pdfArrayBuffer || pdfArrayBuffer.byteLength < 100) {
+          throw new Error("Template PDF output binary is invalid or empty.");
+        }
+
+        console.log("[PDF Engine] Template sample PDF compiled successfully. Size:", pdfArrayBuffer.byteLength);
+
+        const blob = new Blob([pdfArrayBuffer], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        const filename = `${quickName.trim().replace(/\s+/g, "_")}_Certificate.pdf`;
+
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        console.log("[PDF Engine] Initiating download for template sample:", filename);
+        link.click();
+        document.body.removeChild(link);
+
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
       }
 
       // Add record to registry logs for full active validation

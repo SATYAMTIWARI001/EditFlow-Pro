@@ -75,10 +75,16 @@ export default function App() {
     }));
   };
 
-  // Push layout or style change onto history stack
+  // Push layout or style change onto history stack and auto-save to localStorage
   const recordHistory = useCallback((newTemplates: CertificateTemplate[], debounceMs: number = 0) => {
     const snapshot = cloneTemplates(newTemplates);
     setTemplates(snapshot);
+
+    try {
+      localStorage.setItem("certificate_studio_saved_templates_v1", JSON.stringify(snapshot));
+    } catch (err) {
+      console.warn("Failed to auto-save templates to localStorage:", err);
+    }
 
     if (debounceMs > 0) {
       if (debouncedTimerRef.current) clearTimeout(debouncedTimerRef.current);
@@ -112,6 +118,11 @@ export default function App() {
       const prevTemplates = cloneTemplates(stack[prevIdx]);
       setTemplates(prevTemplates);
       setHistoryIndex(prevIdx);
+      try {
+        localStorage.setItem("certificate_studio_saved_templates_v1", JSON.stringify(prevTemplates));
+      } catch (err) {
+        console.warn("Failed to auto-save templates to localStorage on undo:", err);
+      }
     }
   }, []);
 
@@ -123,6 +134,11 @@ export default function App() {
       const nextTemplates = cloneTemplates(stack[nextIdx]);
       setTemplates(nextTemplates);
       setHistoryIndex(nextIdx);
+      try {
+        localStorage.setItem("certificate_studio_saved_templates_v1", JSON.stringify(nextTemplates));
+      } catch (err) {
+        console.warn("Failed to auto-save templates to localStorage on redo:", err);
+      }
     }
   }, []);
 
@@ -203,15 +219,31 @@ export default function App() {
     }
   ]);
 
-  // Load default templates on boot
+  // Load saved templates from localStorage or fallback to default templates on boot
   useEffect(() => {
-    const defaultTemplates = generateDefaultTemplates();
-    const cloned = cloneTemplates(defaultTemplates);
+    let initialTemplates: CertificateTemplate[] = [];
+    try {
+      const saved = localStorage.getItem("certificate_studio_saved_templates_v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          initialTemplates = parsed;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to load templates from localStorage on boot:", err);
+    }
+
+    if (initialTemplates.length === 0) {
+      initialTemplates = generateDefaultTemplates();
+    }
+
+    const cloned = cloneTemplates(initialTemplates);
     setTemplates(cloned);
     setHistoryStack([cloned]);
     setHistoryIndex(0);
-    if (defaultTemplates.length > 0) {
-      setActiveTemplateId(defaultTemplates[0].id);
+    if (cloned.length > 0) {
+      setActiveTemplateId(cloned[0].id);
     }
   }, []);
 

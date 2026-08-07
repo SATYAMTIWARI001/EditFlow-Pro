@@ -619,6 +619,7 @@ export default function Workspace({
         link.click();
         document.body.removeChild(link);
       } else {
+        console.log("[PDF Engine] Generating single page PDF for certificate:", nameSlug);
         const imgData = canvas.toDataURL("image/png");
         const pdf = new jsPDF({
           orientation: "landscape",
@@ -630,15 +631,21 @@ export default function Workspace({
         pdf.addImage(imgData, "PNG", 0, 0, width, height, undefined, "NONE");
         
         const pdfArrayBuffer = pdf.output("arraybuffer");
+        if (!pdfArrayBuffer || pdfArrayBuffer.byteLength < 100) {
+          throw new Error("Certificate PDF output binary is invalid or empty.");
+        }
+
+        console.log("[PDF Engine] Certificate PDF compiled successfully, byte size:", pdfArrayBuffer.byteLength);
         const blob = new Blob([pdfArrayBuffer], { type: "application/pdf" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.download = `${nameSlug}_Certificate.pdf`;
         link.href = url;
         document.body.appendChild(link);
+        console.log("[PDF Engine] Initiating download for:", `${nameSlug}_Certificate.pdf`);
         link.click();
         document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
       }
 
       // 6. Push verified logs record
